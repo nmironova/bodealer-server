@@ -1,0 +1,40 @@
+Senior kibitzer Oscar is observing a task:
+DEC25_DUMMY_GF : Bidding one sided: 1s ??
+We choose between game forcing 2C and semi-forcing 1NT.
+Fixed hand is [N:T2.AT93.KJ2.A982]
+Scorer to use is V3N BY N
+Recognized a fixed hand task type: ONE_SIDED_BIDDING_LEVEL
+Primary scorer (notrump, 9 tr): -200 -100 600 630 660 690 720  /  -100 120 150 180 210 240 270
+----
+29:    NORTH     EAST    SOUTH     WEST
+30:    50092,       0,    >MLN,       0,  :   PointsRange 11 12 SOUTH 
+31:        0,       0,  504106,       0,  :   SpadesLen 5 5 SOUTH 
+32:        0,       0,   23822,       0,  :   HeartsLen 0 3 SOUTH 
+33:        0,       0,    9566,       0,  :   DiamondsLen 1 4 SOUTH 
+34:        0,       0,    4654,       0,  :   ClubsLen 1 4 SOUTH 
+35:        0,       0,       0,   13490,  :   NoOvercall WEST 
+36:        0,   13184,       0,       0,  :   NoOvercall EAST 
+ 9 tricks board by North in notrump example:
+--------
+               T2          HCP : 24
+               AT93        CTRL: 7
+               KJ2                                                            
+               A982                                                           
+   A9875                   4
+   KJ642                   Q7
+   95                      AT8643
+   5                       Q763
+               KQJ63
+               85
+               Q7
+               KJT4
+
+
+
+
+
+
+
+
+
+

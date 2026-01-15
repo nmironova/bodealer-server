@@ -1,0 +1,7 @@
+{
+  "id": "5be5696a-62c7-4032-8cc4-17a1f27adefc",
+  "status": "failed",
+  "error": "Cannot read properties of null (reading 'on')",
+  "finishedAt": "2026-01-10T22:14:44.925Z",
+  "pid": null
+}

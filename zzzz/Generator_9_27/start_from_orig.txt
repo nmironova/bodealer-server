@@ -1,0 +1,937 @@
+The main selector in this config is a line that starts with "TASK NAME".
+So we usually comment out old tasks at the line start
+
+Competitive:
+//TASK NAME:JUN25_HEARTS_CLUBS
+//TASK NAME:NOV_65_OGNJEN
+//TASK NAME:AUG_BLITZ_VS_DIMULYA
+//TASK NAME:AUG_TRICOLOR_OVER_OPP_3S
+//TASK NAME:AUG_PREEMPTIVE_ON_PART_1H
+
+One sided:
+TASK NAME:DEC25_DUMMY_GF
+//TASK NAME:DEC25_GAME_FORCING_WEAK_65
+//TASK NAME:DEC25_ALL_ACES
+//TASK NAME:DEC25_14_HCP_MAJOR_NV
+//TASK NAME:NOV25_MULTI_SCORE_SLAMISH
+//TASK NAME:NOV25_SLAMISH
+//TASK NAME:NOV25_DIAMONDS_MILTISCORER
+//TASK NAME:NOV25_MEETING_1S
+//TASK NAME:OCT25_ON_MULTI
+//TASK NAME:OCT25_TROFEY_OFFER_3NT
+//TASK NAME:OCT25_POSSIBLY_INSANE_BUTLER
+//TASK NAME:JUN25_ONE_SIDE_HEARTS_CLUBS
+//TASK NAME:FEB25_MAJORS_RESPONCE_PRECISION
+//TASK NAME:OCT_MINOR_SUPERFIT
+//TASK NAME:COPILOT
+//TASK NAME:SEP_RESPONCE_TO_2C
+//TASK NAME:SEP_PARTIZAN_SPLIT_FIT
+//TASK NAME:AUG_JAGODINA_INVITE
+//TASK NAME:MAY24_TRHEE_SUITED_BALANCE
+//TASK NAME:MAY24_GLADIATOR
+//TASK NAME:MAY24_TENS_AND_NINES
+
+Leads:
+//TASK NAME:JUN24_LEAD_AK
+//TASK NAME:DEC25_LEAD_BORIS
+
+No fixed hand:
+//TASK NAME:4_HAND_MINOR_SUPERFIT
+//TASK NAME:4_HAND_SLAM_ON_MINOR_SUPERFIT
+
+-----------------------------------------------------------------------------------------------------------------------
+DEC25_DUMMY_GF Bidding one sided: 1s ??
+We choose between game forcing 2C and semi-forcing 1NT.
+
+HAND: N:T2.AT93.KJ2.A982
+//HAND: N:82.A893.KJ2.A982
+PRIMARY SCORER: V3N BY N
+POSTMORTEM: AUTO
+
+FILTERS:
+    SOUTH: PointsRange, 11, 12
+    SOUTH: SpadesLen, 5, 5
+    SOUTH: HeartsLen, 0, 3
+    SOUTH: DiamondsLen, 1, 4
+    SOUTH: ClubsLen, 1, 4
+
+    WEST: NoOvercall
+    EAST: NoOvercall
+
+-----------------------------------------------------------------------------------------------------------------------
+DEC25_LEAD_BORIS lead from 5-card or another suit
+Fix a 3 hcp 3541; Bidding from RHO (S): 
+        (1NT) p 
+ (3c) p (3d)  p   Puppet; No 5M
+ (3NT) all pass
+Question: what to lead?
+
+HAND: W:T74.J7543.J865.J
+LEAD CARDS: 7.3.6.J
+PRIMARY SCORER: V3N BY S
+
+FILTERS:
+    SOUTH: PointsRange 15, 17
+    SOUTH: SpadesLen 2, 4
+    SOUTH: HeartsLen 2, 4
+    SOUTH: ClubsLen, 2, 5
+    SOUTH: DiamondsLen, 2, 5
+
+    EAST: NoOvercall
+
+    NORTH: PointsRange 9, 10
+    NORTH: ClubsLen 2, 5
+    NORTH: HeartsLen 1, 3
+    NORTH: SpadesLen 1, 3
+    NORTH: ExcludeCombination {
+        NORTH: HeartsLen 1, 2
+        NORTH: SpadesLen 1, 2
+    }
+
+-----------------------------------------------------------------------------------------------------------------------
+DEC25_GAME_FORCING_WEAK_65 ...
+Bidding one sided: 1c  1d
+                   2c  2d
+                   2NT 3h
+                   3s  ??
+Question: 5D inv or 6D?
+
+HAND: N:QJT83.T.T87532.2
+PRIMARY SCORER: V6D BY S
+POSTMORTEM: AUTO
+
+FILTERS:
+    SOUTH: PointsRange, 22, 23
+    SOUTH: SpadesLen, 2, 2
+    SOUTH: HeartsLen, 2, 4
+    SOUTH: DiamondsLen, 2, 5
+    SOUTH: ClubsLen, 2, 5
+
+    WEST: NoOvercall
+    EAST: NoOvercall
+
+-----------------------------------------------------------------------------------------------------------------------
+DEC25_ALL_ACES ...
+Bidding one sided: 1c  1d
+                   2c  2d
+                   2NT 3h
+                   3s  5d
+                   ??
+Question: pass or 6D?
+
+HAND: N:A2.AK985.AK94.AJ
+PRIMARY SCORER: V6D BY S
+POSTMORTEM: AUTO
+
+FILTERS:
+    SOUTH: PointsRange, 0, 3
+    SOUTH: SpadesLen, 5, 5
+    SOUTH: DiamondsLen, 5, 6
+    SOUTH: ControlsRange, 0, 0
+
+    WEST: NoOvercall
+    EAST: NoOvercall
+
+-----------------------------------------------------------------------------------------------------------------------
+DEC25_14_HCP_MAJOR_NV
+Bidding one-sided: 1h(8-16) 1s 
+                   1NT      ??
+Question: is there a game or an invit?
+
+HAND: N:AK97.K85.A832.76
+PRIMARY SCORER: N4H BY S
+POSTMORTEM: AUTO
+
+FILTERS:
+    SOUTH: PointsRange, 8, 9
+    SOUTH: HeartsLen, 5, 5
+    SOUTH: SpadesLen, 0, 3
+    SOUTH: PointsSuitAtLeast, HRT, 2
+    SOUTH: ControlsRange, 2, 4
+    SOUTH: ClubsLen, 0, 4
+    SOUTH: DiamondsLen, 0, 5
+
+    WEST: NoOvercall
+    EAST: NoOvercall
+
+-----------------------------------------------------------------------------------------------------------------------
+NOV25_MULTI_SCORE_SLAMISH  ...
+Bidding from LHO: 3d 3NT pass ??
+Question: slam or slam invitation.
+
+HAND: N:QT64.AK87..KJ587
+PRIMARY SCORER: V3N BY S
+SECONDARY SCORER: V6C BY N
+POSTMORTEM: AUTO
+
+MULTI SCORER: 
+    SOUTH: HeartsLen, 4, 4   --> V6H BY N
+    SOUTH: SpadesLen, 4, 4   --> V6S BY N
+
+FILTERS:
+    SOUTH: PointsRange, 15, 16
+    SOUTH: HeartsLen, 2, 4
+    SOUTH: SpadesLen, 2, 4
+    SOUTH: ClubsLen, 2, 7
+
+    WEST: DiamondsLen, 0, 2
+
+    SOUTH: PointsSuitAtLeast, DMD, 3
+
+    SOUTH: LineKeyCardsSuit, NORTH, SPD, 4, 5
+
+    EAST: DiamondsLen, 7, 8
+    EAST: PointsRange, 5, 10
+    EAST: HeartsLen, 0, 3
+    EAST: SpadesLen, 0, 3
+
+-----------------------------------------------------------------------------------------------------------------------
+NOV25_SLAMISH  ...
+Bidding from LHO: 3d 3NT pass ??
+Question: slam or slam invitation.
+
+HAND: N:QT64.AK87..KJ587
+PRIMARY SCORER: V6S BY N
+//PRIMARY SCORER: V6H BY N
+//PRIMARY SCORER: V6C BY N
+POSTMORTEM: AUTO
+
+FILTERS:
+    SOUTH: PointsRange, 15, 16
+    SOUTH: HeartsLen, 2, 3
+    SOUTH: SpadesLen, 4, 4
+    SOUTH: ClubsLen, 2, 7
+
+    WEST: DiamondsLen, 0, 2
+
+    SOUTH: PointsSuitAtLeast, DMD, 3
+
+    SOUTH: LineKeyCardsSuit, NORTH, SPD, 4, 5
+
+    EAST: DiamondsLen, 7, 8
+    EAST: PointsRange, 5, 10
+    EAST: HeartsLen, 0, 3
+    EAST: SpadesLen, 0, 3
+
+-----------------------------------------------------------------------------------------------------------------------
+NOV25_DIAMONDS_MILTISCORER  ...
+Bidding from part: 1d 1h 
+                   2d ??
+The first path is to pass and play 2D.
+The second path is to big 3D that can lead to 3 possible contracts: 3D, 4H, 3NT.
+Question: which way to go?
+
+HAND: N:7.QT943.AT4.AT87
+PRIMARY SCORER: V2D BY S
+SECONDARY SCORER: V3N BY S
+POSTMORTEM: AUTO
+
+MULTI SCORER: 
+    SOUTH: PointsRange, 11, 12  --> V3D BY S
+    SOUTH: HeartsLen, 3, 3      --> V4H BY N
+
+FILTERS:
+    SOUTH: PointsRange, 11, 14
+    SOUTH: HeartsLen, 0, 3
+    SOUTH: SpadesLen, 0, 3
+    SOUTH: DiamondsLen, 6, 7
+    SOUTH: ClubsLen, 0, 4
+
+    WEST: NoOvercall2ndLevel
+    EAST: NoOvercall2ndLevel
+
+-----------------------------------------------------------------------------------------------------------------------
+NOV25_MEETING_1S
+Bidding from part: 1c 1s ??
+    We select from 2h or DBL.
+    2h way can be passed around (minimal hand, =3h)
+    DBL way can lead on same hands to 3NT.
+Question: is there a game or an invit?
+
+HAND: N:J.9763.KQ542.A83
+//HAND: N:Q.9763.KQ542.A83
+PRIMARY SCORER: V2H BY N
+SECONDARY SCORER: V3N BY S
+POSTMORTEM: AUTO
+
+FILTERS:
+    SOUTH: PointsRange, 14, 14
+    SOUTH: HeartsLen, 3, 3
+    SOUTH: SpadesLen, 3, 4
+    SOUTH: PointsSuitAtLeast, SPD, 3
+    SOUTH: ClubsLen, 2, 5
+    SOUTH: DiamondsLen, 2, 4
+
+    WEST: PointsRange, 10, 14
+    WEST: SpadesLen, 5, 6
+
+-----------------------------------------------------------------------------------------------------------------------
+OCT25_ON_MULTI
+Bidding from part: 2d p ??
+
+Question: is there a game or an invit?
+
+HAND: N:AK92.KT9.QJ965.9
+PRIMARY SCORER: V4H BY N
+POSTMORTEM: AUTO
+
+FILTERS:
+    SOUTH: PointsRange, 5, 6
+    SOUTH: HeartsLen, 6, 6
+    SOUTH: SpadesLen 0, 3
+
+    WEST: NoOvercall
+
+-----------------------------------------------------------------------------------------------------------------------
+OCT25_POSSIBLY_INSANE_BUTLER  one sided
+Bidding from part: 2NT p 3d p
+                   3h  p 4c p
+                   4h  p ??
+Question: do we try slam?
+
+HAND: N:J7.AQJ43.2.86532
+PRIMARY SCORER: V6H BY S
+POSTMORTEM: AUTO
+
+FILTERS:
+    SOUTH: PointsRange, 20, 22
+    SOUTH: ClubsLen, 2, 3
+    SOUTH: HeartsLen, 3, 3
+    SOUTH: DiamondsLen, 2, 5
+    SOUTH: SpadesLen 2, 5
+
+    SOUTH: LineKeyCardsSuit, NORTH, HRT, 4, 5
+    SOUTH: LineSuitAnyCuebid, NORTH, SPD
+    SOUTH: LineSuitAnyCuebid, NORTH, CLB
+
+    EAST: PassVul
+    WEST: NoOvercall
+
+-----------------------------------------------------------------------------------------------------------------------
+OCT25_TROFEY_OFFER_3NT 
+Bidding from part: 1c p 1h p
+                   2h p ??
+Question: do you offer 3NT or prefer to play 4H?
+
+HAND: N:Q3.KJ98.A95.K763
+PRIMARY SCORER: V4H BY N
+SECONDARY SCORER: V3N BY N
+POSTMORTEM: AUTO
+
+FILTERS:
+    SOUTH: PointsRange, 11, 14
+    SOUTH: HeartsLen, 4, 4
+    SOUTH: DiamondsLen, 3, 3
+    SOUTH: ClubsLen, 3, 3
+
+    SOUTH: LineKeyCardsSuit, NORTH, HRT, 4, 5
+
+    WEST: PassVul
+
+    EAST: PassVul
+
+-----------------------------------------------------------------------------------------------------------------------
+JUN25_ONE_SIDE_HEARTS_CLUBS RHO starts Fix some 4 hcp 3343;
+Bidding from RHO : p  p  p  1c(Polish club)  
+                   1d p  1s 2d(5+ hearts, 5+ clubs, 17+)
+                   p  ??
+Question: is there a game or an invit?
+
+// HAND: N:J64.987.QJ65.T98
+//HAND: N:J64.QJ9.8765.T98
+HAND: N:J64.329.8765.QJ8
+PRIMARY SCORER: V4H BY N
+POSTMORTEM: HCP 21, 23
+
+FILTERS:
+    SOUTH: PointsRange, 17, 19
+    SOUTH: HeartsLen, 5, 5
+    SOUTH: ClubsLen, 5, 5
+
+    WEST: PassVul
+    WEST: DiamondsLen, 5, 5
+
+    EAST: PassVul
+    EAST: SpadesLen 4, 6
+
+
+
+-----------------------------------------------------------------------------------------------------------------------
+JUN25_HEARTS_CLUBS Fix some 4 hcp 3343;
+Bidding from RHO : p  p  p  1c  
+                   1d p  1s 2d
+                   p  2h p  p
+                   2s ??
+Question: compete or pass?
+PRIMARY SCORER: V3H BY N
+SECONDARY SCORER: V2S BY E
+POSTMORTEM: AUTO
+
+HAND: N:J64.QJ9.8765.T98
+FILTERS:
+    SOUTH: PointsRange, 17, 19
+    SOUTH: HeartsLen, 5, 5
+    SOUTH: ClubsLen, 5, 5
+
+    WEST: PassVul
+    WEST: SpadesLen 1, 3
+    WEST: DiamondsLen, 5, 5
+
+    EAST: PassVul
+    EAST: SpadesLen 5, 6
+
+-----------------------------------------------------------------------------------------------------------------------
+FEB25_MAJORS_RESPONCE_PRECISION Fix a 5 hcp 5620;
+Bidding from part : 2c  p 2h p
+                    2s  p ??
+Question: is there a game or an invit?
+
+HAND: N:J9864.JT8765.K2.
+PRIMARY SCORER: V4S BY N
+POSTMORTEM: AUTO
+
+FILTERS:
+    SOUTH: PointsRange, 11, 16
+    SOUTH: HeartsLen, 0, 1
+    SOUTH: ClubsLen, 5, 7
+    SOUTH: SpadesLen, 4, 4
+
+    WEST: NoOvercall2ndLevel
+    EAST: NoOvercall2ndLevel
+
+-----------------------------------------------------------------------------------------------------------------------
+NOV_65_OGNJEN compete over 4S
+Bidding from LHO. Partner is on S: 
+  pass 1c   pass   1h
+  1s   pass 2s     3c
+  pass 3NT  4s     ??
+Question: pass (forcing, to leave it in if partner doubles) or 5C?
+
+HAND: N:.AQ985.J5.AKJ876
+
+PRIMARY SCORER: V5C BY S
+SECONDARY SCORER: N4SX BY WEST
+
+FILTERS:
+    EAST: PassVul
+    EAST: SpadesLen 4, 5
+
+    WEST: NoOvercall
+
+    SOUTH: WeakGroup, 12, 13
+    SOUTH: SpadesLen 3, 3
+    SOUTH: HeartsLen 2, 3
+    SOUTH: PointsSuitAtLeast, SPD, 6
+    SOUTH: ClubsLen 2, 4
+
+-----------------------------------------------------------------------------------------------------------------------
+4_HAND_SLAM_ON_MINOR_SUPERFIT A 4-hand task:
+Our line has 5-5 fit in a minor. A bidding is like
+   2c(part) 2d
+   2s       ??
+Despite RESP has a diamond stopper. Let's compare 6C and 3NT, 
+having in mind following bidding sequences:
+   ...      2NT(inq)               ...        2NT(inq)
+   3c       5c                     (max)      4c
+                                   (cuebids)  5c/6c
+
+PRIMARY SCORER: V6C BY S
+SECONDARY SCORER: V3N BY N
+POSTMORTEM: HCP 24, 31
+
+FILTERS:
+    SOUTH: LinePointsRange, NORTH, 25, 30
+    SOUTH: LineKeyCardsSuit, NORTH, CLB, 4, 5
+
+    SOUTH: PointsRange, 13, 16
+    SOUTH: ClubsLen, 5, 7
+    SOUTH: SpadesLen, 4, 4
+    SOUTH: HeartsLen, 0, 3
+
+    SOUTH: LineSuitAnyCuebid, NORTH, SPD
+    SOUTH: LineSuitAnyCuebid, NORTH, HRT
+    SOUTH: LineSuitAnyCuebid, NORTH, DMD
+
+    NORTH: PointsRange 11, 14
+    NORTH: ClubsLen 5, 5
+    NORTH: HeartsLen 4, 4
+    NORTH: PointsSuitAtLeast, DMD, 3
+
+    WEST: NoOvercall
+    EAST: NoOvercall
+
+-----------------------------------------------------------------------------------------------------------------------
+naive variant
+FILTERS:
+    SOUTH: LinePointsRange, NORTH, 26, 29
+    SOUTH: LineKeyCardsSuit, NORTH, CLB, 4, 5
+
+    SOUTH: PointsRange, 11, 16
+    SOUTH: ClubsLen, 5, 7
+    SOUTH: SpadesLen, 4, 4
+    SOUTH: HeartsLen, 0, 3
+
+    NORTH: PointsRange 11, 13
+    NORTH: ClubsLen 5, 5
+    NORTH: HeartsLen 4, 4
+    NORTH: PointsSuitAtLeast, DMD, 3
+
+    WEST: NoOvercall
+    EAST: NoOvercall
+
+-----------------------------------------------------------------------------------------------------------------------
+4_HAND_MINOR_SUPERFIT A 4-hand task:
+Our line has 5-5 fit in a minor. Let's compare 3NT, 5C and 6C.
+A bidding is like
+   2c(part) 2d
+   2s       ??
+
+PRIMARY SCORER: V3N BY N
+SECONDARY SCORER: V5C BY S
+POSTMORTEM: HCP 22, 29
+
+FILTERS:
+    SOUTH: PointsRange, 11, 16
+    SOUTH: ClubsLen, 5, 7
+    SOUTH: SpadesLen, 4, 4
+    SOUTH: HeartsLen, 0, 3
+
+    NORTH: ClubsLen 5, 5
+    NORTH: HeartsLen 4, 4
+    NORTH: PointsSuitAtLeast, DMD, 3
+    NORTH: PointsRange 11, 13
+
+    WEST: NoOvercall
+    EAST: NoOvercall
+
+    SOUTH: ExcludeCombination {
+       SOUTH: PointsRange, 11, 12
+       NORTH: PointsRange 11, 11
+    }
+
+    SOUTH: ExcludeCombination {
+       SOUTH: PointsRange, 16, 16
+       NORTH: PointsRange 13, 13
+    }
+
+-----------------------------------------------------------------------------------------------------------------------
+OCT_MINOR_SUPERFIT To be a 4-hand task:
+Our line has 5-5 fit in a minor. Let's compare 3NT and 5C.
+For now, a bidding is like
+   2c(part) 2d
+   2s       ??
+
+HAND: N:64.KJ83.K8.AJ876
+//HAND: N:64.KJ83.K8.KQ876
+PRIMARY SCORER: V3N BY N
+SECONDARY SCORER: V5C BY S
+POSTMORTEM: HCP 23, 28
+
+FILTERS:
+    SOUTH: PointsRange, 11, 16
+    SOUTH: ClubsLen, 5, 7
+    SOUTH: SpadesLen, 4, 4
+    SOUTH: HeartsLen, 0, 3
+
+    WEST: NoOvercall
+    EAST: NoOvercall
+
+-----------------------------------------------------------------------------------------------------------------------
+COPILOT Playing on Gambler
+no bids, no questions
+
+HAND: N:K64.AKQJT8.T82.T
+PRIMARY SCORER: V4H BY N
+POSTMORTEM: AUTO
+
+FILTERS:
+    SOUTH: PointsRange, 8, 10
+    SOUTH: PassVul
+    SOUTH: HeartsLen, 3, 4
+
+-----------------------------------------------------------------------------------------------------------------------
+SEP_RESPONCE_TO_2C A general question. 
+We have a weak hand with a short club. 
+   2c(part) pass ??
+Question: Should we ask 2d or just pass?
+Example: (gambler)
+
+HAND: N:T6542.A8753.T2.T
+PRIMARY SCORER: V2C BY S
+
+FILTERS:
+    WEST: NoOvercall
+
+    SOUTH: PointsRange, 11, 16
+    SOUTH: ClubsLen, 5, 7
+    SOUTH: SpadesLen, 0, 4
+    SOUTH: DiamondsLen, 0, 4
+    SOUTH: HeartsLen, 0, 4
+    SOUTH: ExcludeCombination {
+       SOUTH: ClubsLen, 5, 5
+       SOUTH: SpadesLen, 0, 3
+       SOUTH: HeartsLen, 0, 3
+    }
+
+-----------------------------------------------------------------------------------------------------------------------
+SEP_PARTIZAN_SPLIT_FIT Fix a 13 hcp 3631;
+Bidding from part : p  p 1h p
+             2d(split) p ??
+Question: is there a game or an invit?
+
+//HAND: N:T64.AKQJT8.T82.K
+HAND: N:K64.AKQJT8.T82.T
+PRIMARY SCORER: V4H BY N
+POSTMORTEM: AUTO
+
+FILTERS:
+    SOUTH: PointsRange, 8, 10
+    SOUTH: PassVul
+    SOUTH: HeartsLen, 3, 4
+
+    WEST: NoOvercall
+    EAST: NoOvercall
+
+    SOUTH: ExcludeCombination {
+       SOUTH: PointsRange, 8, 8
+       SOUTH: SpadesLen, 3, 5
+       SOUTH: ClubsLen, 3, 5
+       SOUTH: DiamondsLen, 3, 5
+    }
+    SOUTH: PointsSuitLimit, CLB, 0
+
+-----------------------------------------------------------------------------------------------------------------------
+AUG_JAGODINA_INVITE Fix a 10 hcp 0535;
+Bidding: 1s p  2d(to h) p
+         2h p  ??
+Question: is there invit to 3NT?
+
+HAND: N:.AT753.Q32.A9763
+PRIMARY SCORER: V3C BY S
+SECONDARY SCORER: V2H BY S
+POSTMORTEM: HCP 20, 23
+
+FILTERS:
+    SOUTH: PointsRange, 10, 13
+    SOUTH: SpadesLen, 5, 5
+    SOUTH: SpadesNatural
+    SOUTH: HeartsLen, 1, 2
+
+    WEST: NoOvercall
+    EAST: NoOvercall
+
+    SOUTH: ExcludeCombination
+       SOUTH: PointsRange, 10, 10
+       SOUTH: ControlsRange, 0, 3
+    }
+
+    SOUTH: ExcludeCombination
+       SOUTH: PointsRange, 11, 11
+       SOUTH: ControlsRange, 0, 1
+    }
+
+    SOUTH: ExcludeCombination
+       SOUTH: HeartsLen, 2, 2
+       SOUTH, ClubsLen, 0, 1
+    }
+
+-----------------------------------------------------------------------------------------------------------------------
+
+    SOUTH: ExcludeCombination
+       SOUTH: HeartsLen, 1, 1
+       SOUTH: AnyInListBelow {
+          SOUTH: ClubsLen, 5, 5
+          SOUTH: DiamondsLen, 5, 5
+       }
+    }
+
+AUG_BLITZ_VS_DIMULYA Fix a 10 hcp 3514;
+Bidding from LHO:
+  1s    2d    pass  2h
+  pass  pass  2s    pass
+  pass  Dbl   pass  ??
+
+Question: pass or 3c?
+
+HAND: N:J54.QJT92.8.AQ83
+
+PRIMARY SCORER: N3C BY NORTH
+SECONDARY SCORER: V2SX BY EAST
+POSTMORTEM: HCP 21, 24
+
+FILTERS:
+    SOUTH: ExactShape, 2, 2, 5, 4
+    SOUTH: PointsRange, 12, 13
+
+    EAST: SpadesLen, 5, 5
+    EAST: PointsRange, 11, 14
+    EAST: SpadesNatural
+    EAST: ClubsLen, 0, 4
+
+    WEST: DiamondsLen, 5, 6
+    WEST: PointsRange, 5, 6
+    WEST: PointsSuitAtLeast, DMD, 2
+
+    SOUTH: ControlsRange, 3, 6
+-----------------------------------------------------------------------------------------------------------------------
+MAY24_TENS_AND_NINES Fix a 10 hcp 3343;
+   1c(14-16)  p 1NT p
+   2nt        p ??
+   
+Question: pass or 3NT?
+
+HAND: N:JT6.KJ6.KJT7.J97
+PRIMARY SCORER: V3N  BY NORTH
+POSTMORTEM: HCP 24, 25
+
+FILTERS:
+    SOUTH: WeakGroup, 14, 15
+    SOUTH: ControlsRange, 2, 6
+    
+    WEST: NoOvercall
+    EAST: NoOvercall
+
+    SOUTH: ExcludeCombination
+       SOUTH: AnyInListBelow {
+          SOUTH: PointsRange, 15, 15
+          SOUTH: ControlsRange, 6, 6
+       }
+       SOUTH: AnyInListBelow {
+          SOUTH: ClubsLen, 5, 5
+          SOUTH: DiamondsLen, 5, 5
+       }
+    }
+
+    SOUTH: NoPrecision2C
+
+-----------------------------------------------------------------------------------------------------------------------
+MAY24_GLADIATOR Fix a 7 hcp 5323;
+Bidding from part (S): 
+   1d 1s
+   2nt ??
+Other hand example S:5.KJ4.AKQJ73.Q74
+Question: pass or 3NT? or 3D
+
+HAND: N:KT965.A64.72.T74
+//HAND: N:KT965.A64.J7.T74
+//HAND: N:KT965.K64.Q2.T74
+
+PRIMARY SCORER: V3N  BY SOUTH
+SECONDARY SCORER: V3D BY SOUTH
+POSTMORTEM: AUTO
+
+FILTERS:
+   SOUTH, PointsRange, 15, 16
+   SOUTH, DiamondsLen, 6, 6
+   SOUTH, SpadesLen, 0, 2
+
+   WEST, NoOvcOn1LevOpen
+   EAST, NoOvercall
+
+   SOUTH, PointsSuitAtLeast, DMD, 7
+   SOUTH, HeartsLen, 0, 4
+   SOUTH, ClubsLen, 0, 4
+
+-----------------------------------------------------------------------------------------------------------------------
+AUG_TRICOLOR_OVER_OPP_3S Fix 12 HCP 0544;
+Bidding from part (S): 
+1NT(10-13) pass   2h 2s
+pass       3s     ??
+Question: pass or 4H?
+
+HAND: N:.KQ754.A765.KT93
+
+PRIMARY SCORER: N4H BY SOUTH
+SECONDARY SCORER: N3S BY EAST
+POSTMORTEM: HCP 22, 25
+
+FILTERS:
+   SOUTH: WeakNT, 10, 13
+   SOUTH: HeartsLen, 2, 3
+
+   EAST: PointsRange, 10, 17
+   EAST: SpadesLen, 5, 7
+   EAST: SpadesNatural
+   EAST: ExcludeCombination {
+      EAST: PointsLimit, 12
+      EAST: SpadesLen, 5, 5
+   }
+
+   WEST: SpadesLen, 3, 4
+   WEST: ExcludeCombination {
+      WEST: SpadesLen, 3, 3
+      WEST: PointsLimit, 8
+   }
+   WEST: ExcludeCombination {
+      WEST: ExactShape, 4, 3, 3, 3
+      WEST: PointsLimit, 6
+   }
+
+-----------------------------------------------------------------------------------------------------------------------
+MAY24_TRHEE_SUITED_BALANCE Fix a 8 hcp 2434;
+Bidding: 2s X p ??
+Question: is there invit to 4H?
+
+HAND: N:83.Q874.T65.AQ65
+PRIMARY SCORER: V4H BY N
+POSTMORTEM: HCP 20, 25
+
+FILTERS:
+   SOUTH: ExactShape, 1, 4, 4, 4
+   SOUTH: PointsRange, 12, 16
+
+   WEST: PointsLimit, 9
+
+   EAST: PointsRange, 5, 10
+   EAST: SpadesLen, 6, 6
+   EAST: HeartsLen, 0, 4
+   EAST: DiamondsLen, 0, 5
+
+   WEST: ExcludeCombination {
+      WEST: PointsAtLeast, 10
+      WEST: SpadesLen, 4, 4
+   }
+
+   SOUTH: ControlsRange, 2, 8
+
+-----------------------------------------------------------------------------------------------------------------------
+AUG_PREEMPTIVE_ON_PART_1H seven spades on North
+Bidding from partner (S): 
+ 1h    pass 2s 3d
+ pass  pass ??
+Question: pass or 3s?
+
+HAND: N:KJT7652.Q3.4.J96
+
+PRIMARY SCORER: V3SX BY N
+SECONDARY SCORER: N3D BY WEST
+
+FILTERS:
+   SOUTH: PointsRange 8, 14
+   SOUTH: HeartsLen 5, 6
+   SOUTH: HeartsNatural
+   SOUTH: SpadesLen 0, 2
+
+   SOUTH ExcludeCombination {
+        SOUTH, PointsRange, 13, 14
+        SOUTH, PenaltyDoubleDiamonds
+   }
+
+   WEST: NoOvercall
+   WEST: PointsRange 0, 9
+   WEST: DiamondsLen, 0, 4
+   WEST ExcludeCombination {
+        WEST, DiamondsLen, 4, 4
+        WEST, PointsRange, 8, 9
+   }
+
+   EAST: PointsRange 9, 16
+   EAST: DiamondsLen, 5, 7
+   EAST: DiamondsNatural
+   WEST ExcludeCombination {
+        WEST, DiamondsLen, 5, 5
+        WEST, ClubsLen, 5, 5
+   }
+
+-----------------------------------------------------------------------------------------------------------------------
+JUN24_LEAD_AK lead from AK or a side suit
+Fix a 8 hcp 5224; Bidding from RHO (S): 
+        (1h) p 
+ (2c) p (2h) p
+ (3h) p (4h) all pass
+Question: what to lead?
+
+HAND: W:J6532.63.54.AK96
+LEAD CARDS: 3.3.5.K
+PRIMARY SCORER: V4H BY S
+
+FILTERS:
+   SOUTH: PointsRange 11, 14
+   SOUTH: HeartsLen 5, 6
+   SOUTH: HeartsNatural
+
+   EAST: NoOvercall
+
+   NORTH: PointsRange 13, 15
+   NORTH: ClubsLen 5, 6
+   NORTH: HeartsLen 3, 4
+
+-----------------------------------------------------------------------------------------------------------------------
+MYTASK1 This is title
+Details like a bidding
+More details
+
+FILTERS:
+   SOUTH: PointsRange 14, 15
+   SOUTH: ControlsRange 2, 6
+   SOUTH: SpadesLen, 2, 4
+   SOUTH: HeartsLen, 2, 4
+
+   SOUTH: ClubsLen, 2, 5
+   SOUTH: DiamondsLen, 1, 5
+
+   WEST: NoOvercall
+   EAST: NoOvercall
+
+   SOUTH ExcludeCombination {
+      SOUTH, AnyInListBelow
+         SOUTH, PointsRange, 15, 15
+         SOUTH, ControlsRange, 6, 6
+      }
+      SOUTH, AnyInListBelow {
+         SOUTH, ClubsLen, 5, 5
+         SOUTH, DiamondsLen, 5, 5
+      }
+   }
+
+   WEST: NoOvercall
+   EAST: NoOvercall
+
+   SOUTH: NoPrecision2C
+ENDF
+
+-----------------------------------------------------------------------------------------------------------------------
+(a pattern)
+HAND: N:...
+PRIMARY SCORER:  BY 
+FILTERS:
+   SOUTH: PointsRange 14, 15
+   SOUTH: ControlsRange 2, 6
+   SOUTH: HeartsLen 5, 6
+   SOUTH: HeartsNatural
+
+   EAST: NoOvercall
+
+   NORTH: PointsRange 2, 15
+   NORTH: ClubsLen 3, 6
+   NORTH: HeartsLen 3, 4
+
+-----------------------------------------------------------------------------------------------------------------------
+AJ
+AK654
+43
+AQ65
+
+1c 1d
+1h 1NT
+??
+-----------------------------------------------------------------------------------------------------------------------
+TASK_TYPE:FIXED_ONE_HAND
+// below are task types that are auto-detected for FIXED_ONE_HAND
+//TASK_TYPE:ONE_SIDED_BIDDING_LEVEL
+//TASK_TYPE:ONE_SIDED_DENOMINATION
+//TASK_TYPE:COMPETITIVE_GENERIC
+//TASK_TYPE:SEEK_OPENING_LEAD
+//POSTMORTEM: LEAD -- autodetected from LEAD CARDS
+
+-----------------------------------------------------------------------------------------------------------------------
+SCALE: 50
+//SCALE: MIN
+//OPMODE: SEMI_STRAY
+//OPMODE: DEMO_STATISTICS
+//DEBUG: SHOW RECONSTRUCTED
+//DEBUG: SHOW COMPARISONS
+//DEBUG: VERBOSE COMPILING
+//DEBUG: VERBOSE MEMORY
+//DEBUG: SHOW BOARD ON ADDED
+

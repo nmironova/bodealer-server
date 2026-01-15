@@ -1,0 +1,66 @@
+Senior kibitzer Oscar is observing a task:
+NOV25_MULTI_SCORE_SLAMISH :  ...
+Bidding from LHO: 3d 3NT pass ??
+Question: slam or slam invitation.
+Fixed hand is [N:QT64.AK87..KJ587]
+Scorers to use are: V3N BY S; V6C BY N
+Recognized a fixed hand task type: ONE_SIDED_DENOMINATION
+with a multi-scorer of 3 contracts: V6C BY N ; V6H BY N ; V6S BY N 
+Primary scorer (notrump, 9 tr): -200 -100 600 630 660 690 720  / 
+Contract-B scorer (clubs, 12 tr): -500 -400 -300 -200 -100 1370 1390  / 
+----
+29:    NORTH     EAST    SOUTH     WEST
+30:     5002,       0,     >XM,       0,  :   PointsRange 15 16 SOUTH 
+31:        0,       0,  256364,       0,  :   HeartsLen 2 4 SOUTH 
+32:        0,       0,  177372,       0,  :   SpadesLen 2 4 SOUTH 
+33:        0,       0,   93416,       0,  :   ClubsLen 2 7 SOUTH 
+34:        0,       0,       0,  571904,  :   DiamondsLen 0 2 WEST 
+35:        0,       0,    1729,       0,  :   PointsSuitAtLeast DMD 3 SOUTH 
+36:        0,       0,   20797,       0,  :   LineKeyCardsSuit NORTH SPD 4 5 SOUTH 
+37:        0,   15266,       0,       0,  :   DiamondsLen 7 8 EAST 
+38:        0,    2466,       0,       0,  :   PointsRange 5 10 EAST 
+39:        0,     417,       0,       0,  :   HeartsLen 0 3 EAST 
+40:        0,     353,       0,       0,  :   SpadesLen 0 3 EAST 
+ 9 tricks board by South in notrump example:
+--------
+               QT64        HCP : 28
+               AK87        CTRL: 10
+               -                                                              
+               KJ875                                                          
+   J9852                   -
+   JT94                    Q53
+   8                       QT76543
+   T43                     AQ9
+               AK73
+               62
+               AKJ92
+               62
+                                     A contract in clubs has 10 tricks.
+    suit   rank   score              suit   rank   score 
+      C      4      4                  H      3      3     
+      C      T      4                  H      5      3     
+      S      9      4                  H      Q      3     
+      S      J      4                  D      7      3     
+      H      J      3                  D      T      3     
+      H      4      3                  D      Q      3     
+      S      2      3                  C      A      2     
+      S      5      3                  C      9      2     
+      D      8      3                  C      Q      2     
+(ctrA:3N down):       19,       3,       0,       0,       0,       0,       0,          22
+(ctrA:3N make):       64,     339,    2768,    1639,     170,       0,       0,        4980
+        (----):        0,       0,       0,       0,       0,       0,       0,           0
+(B:multi down):     1015,      76,       1,       2,       0,       0,       0,        1094
+(B:multi make):     2789,    1119,       0,       0,       0,       0,       0,        3908
+  (A, same, B):        0,    1091,       3,    3908,       0,       0,       0,        5002
+Processed: 5002 total. West is on lead. Goal is 9 tricks in notrump.
+Averages: 3N = 665.   Chance to make = 99.6%. 
+6C: avg = 1077; makes in 78.1% cases
+Comparison: favor 3N 21.8%; same 0.1%; favor 6C 78.1%
+A huge match: -34549 IMPs; about -691 IMPs/hub
+Verdict:   prefer 6C
+
+A split of comparison results by HCP from 28 to 29:
+              go A     same     go B
+(hcp 28):      652,       3,    1957,   :     2612,  --> 24% to 74%, avg 100 boards give -614 IMPs
+(hcp 29):      439,       0,    1951,   :     2390,  --> 18% to 81%, avg 100 boards give -774 IMPs
+The search took 0.5 sec + an aftermath 1 min 54 sec --> ~2.6K boards per minute.
