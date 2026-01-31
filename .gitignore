@@ -6,3 +6,4 @@ build/
 .env.*
 npm-debug.log*
 yarn-error.log*
+package-lock.j*
