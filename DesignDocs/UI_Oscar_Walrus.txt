@@ -1,0 +1,235 @@
+# Oscar–Walter Task Pipeline Design (v0.5)
+
+Status: draft (agreed baseline)  
+Scope: chat-scoped; nothing sacred; everything versioned.  
+Confidence: “42% sure is enough” (Uncertainty Budget).
+
+## 0) Cast of Processes
+
+- 📱🖥️💻 **UI Apps (clients)**  
+  Web-based frontends that create tasks, poll their status/results, optionally fetch logs, and delete tasks when no longer needed.
+
+- 🦉 **Oscar (OO server / gateway / sink)**  
+  The single aggregator for task state. Oscar receives task creation requests from UI, spawns workers, ingests worker events, exposes task state via HTTP endpoints, and manages lifecycle/eviction.
+
+- 🦦 **Walter (WW worker processes)**  
+  Focused, often CPU-heavy workers launched per task by Oscar. They stream intermediate progress/results back to Oscar for 15–20 minutes (typical), then send a final result and exit.
+
+## 1) High-Level Data Flow
+
+📱🖥️💻 (UI clients)
+POST /tasks (TaskID, metadata)
+│
+▼
+🦉 Oscar (aggregates task state; spawns worker)
+│
+├── launches ──► 🦦 Walter (per-task)
+│ streams intermediate events to Oscar
+│ sends final event
+│ exits
+│
+├── GET /tasks/:id (poll status/results)
+└── DELETE /tasks/:id (cancel or ack/evict)
+
+
+Key idea: workers are short-lived; Oscar is the coherent memory.
+
+## 2) Identity & Lifecycle
+
+### 2.1 Task Identity
+- Task is identified by **TaskID** (GUID/UUID-like string).
+- TaskID is assigned by the UI at creation time and passed to Oscar.
+- TaskID must be **sanitized for filesystem usage** when used as part of a log filename (Oscar responsibility).
+
+### 2.2 Task State Machine
+Canonical states:
+
+- `STARTED`  
+  Task created/known to Oscar; initial progress values may be zeroes.
+- `IN_PROGRESS`  
+  Task receiving/processing intermediate events.
+- Terminal states:
+  - `DONE` (successful finalization)
+  - `FAILED` (final failure)
+  - `CANCELED` (user cancellation path; may be optimistic in v0.5)
+
+Typical flow:
+`STARTED → IN_PROGRESS → DONE`  
+or `STARTED/IN_PROGRESS → FAILED`  
+or `STARTED/IN_PROGRESS → CANCELED`
+
+### 2.3 Worker Lifetime
+- Walter starts after Oscar receives `POST /tasks`.
+- Walter streams intermediate events periodically (every few seconds typical).
+- Walter sends a **final event** and then exits.
+- If a user cancels a running task (`DELETE /tasks/:id`), Oscar marks cancellation intent and later instructs Walter to stop (Walter protocol is out of scope for this document).
+
+### 2.4 Oscar Retention / Cleanup Policy (agreed direction)
+- Once Oscar has delivered final information to the consumer side (UI and/or downstream), Oscar may forget the task.
+- v0.5 explicit mechanism: `DELETE /tasks/:id` serves as “I don’t need this task anymore.”
+  - If task is still running: cancellation path (Oscar requests worker stop; status becomes `CANCELED` in v0.5).
+  - If task is terminal: eviction/forget path.
+- Optional hygiene: time-based sweep for abandoned tasks (`lastSeenMs` TTL sweep), especially after crashes.
+
+## 3) Event Stream and Parsing
+
+### 3.1 Worker → Oscar Events (streamed)
+Walter emits a stream of events to Oscar. Events are parsed by Oscar into a normalized internal form.
+
+Minimal event kinds:
+- `log` — textual messages / trace chunks
+- `progress` — percent/progress updates (may carry message)
+- `final` — terminal success event (may carry final result payload)
+- `error` — terminal failure event (may carry diagnostics)
+
+### 3.2 Event Ordering and Idempotency
+- Each event includes a **monotonic integer** `seq` (e.g., `OwlEvent::seq`) per task.
+- Oscar accepts an event only if `seq` is strictly greater than the last accepted `seq` for that task.
+- This yields “at-least-once tolerant” ingestion (duplicates/out-of-order ignored safely).
+
+### 3.3 Snapshot Semantics
+For UI polling, Oscar maintains a per-task snapshot derived from the latest parsed events:
+
+- In `STARTED`: progress fields often default/zero.
+- In `IN_PROGRESS`: fields reflect the latest completely parsed intermediate state.
+- In `DONE`: fields include final parsed results.
+- In `FAILED`: fields include final diagnostics.
+- In `CANCELED`: fields indicate cancellation requested (see Section 5.3).
+
+## 4) UI ↔ Oscar HTTP API (minimal v0.5)
+
+Oscar exposes a small API surface for UI clients. Primary endpoints:
+
+GET /tasks/hello
+GET /tasks
+GET /tasks/:id
+POST /tasks
+DELETE /tasks/:id
+
+
+### 4.1 GET /tasks/hello
+Purpose: lightweight probe/handshake that the Tasks API is alive.
+
+Response: plain text (or JSON, optional).
+
+### 4.2 POST /tasks
+Purpose: create or retrieve a task by TaskID (idempotent-ish).
+
+Input (JSON):
+- `task_id` (or `id`) — required
+- `name` — optional metadata
+- `boardsNumber` — optional metadata
+
+Behavior:
+- If task does not exist: create `STARTED`.
+- If task exists: return existing state.
+- Metadata fill rule (agreed): if existing `name` is empty and request provides non-empty `name`, set it; similarly for `boardsNumber` when existing is 0 and request provides non-zero.
+
+Response: task snapshot JSON.
+
+### 4.3 GET /tasks
+Purpose: list known tasks (for dashboards / debug).
+
+Behavior:
+- v0.5: minimal list, can be extended with pagination later (`limit/offset`).
+- Response includes `tasks` and `totalElements`.
+
+Response (JSON):
+- `tasks`: array of task snapshots
+- `totalElements`: integer
+
+### 4.4 GET /tasks/:id
+Purpose: poll one task.
+
+Query params (optional):
+- `log_req=1` — include per-task log tail for debug (tiny logs expected).
+
+Behavior:
+- Returns current snapshot always.
+- If `log_req=1`, includes `logTail` (string) or (later) `eventsTail` (array) as desired.
+
+Response: task snapshot JSON (+ optional logTail).
+
+### 4.5 DELETE /tasks/:id
+Purpose: “I don’t need this task anymore” unified operation.
+
+Semantics:
+- If task is running: cancellation path (Oscar marks cancellation and initiates worker stop).
+- If task is terminal: ack/evict path (Oscar forgets task).
+
+Courtesy query params (optional “sanity flavor”):
+- `mode=cancel` — hint that caller intends cancel
+- `mode=ack` — hint that caller intends acknowledge/evict
+- If omitted: Oscar decides based on current task state.
+
+Idempotency:
+- Deleting a non-existent task should succeed gracefully (e.g., 200 with `alreadyDeleted=true`) to simplify UI retry logic.
+
+Response: snapshot at time of delete (+ ok flags).
+
+## 5) Logging Strategy
+
+### 5.1 Per-Task Logs
+- Oscar stores a **separate log file per task**, named using sanitized TaskID.
+- Typical sizes are tiny (~0.5–5KB), so full log retrieval is feasible.
+
+### 5.2 Separation by Task
+- Logs must not interleave between tasks.
+- Each log line may optionally carry minimal structured prefix:
+  `seq=… type=… pct=… msg=… json=…`
+
+### 5.3 Flood Protection
+- If a worker floods logs or behaves badly, Oscar should cut/limit it:
+  - cap log size per task
+  - cap rate (optional)
+  - drop oversized messages
+- (Implementation detail; policy acknowledged.)
+
+## 6) Concurrency & Consistency (Oscar internal)
+
+### 6.1 Task Registry Core
+Oscar maintains task state in a “TaskRegistry” with:
+- per-task mutex for consistent snapshot updates
+- a task map mutex for safe map operations
+- shared ownership for task entries (e.g., `shared_ptr<TaskEntry>`) to avoid use-after-free when tasks are erased concurrently
+
+### 6.2 Consistent Reads
+- GET requests must return a coherent snapshot (no torn state).
+- The simple rule: updates and reads take the per-task lock while touching task fields.
+
+## 7) Open Edges (explicitly acknowledged)
+
+- 🦉 → 🦦 cancellation protocol details (how Oscar tells Walter to stop)  
+  Out of scope for this doc; will be designed separately.
+- Whether `CANCELED` is “requested” vs “confirmed stopped”  
+  v0.5 can be optimistic; later can add “confirmation event” from Walter.
+- Optional future: incremental event polling  
+  `GET /tasks/:id/events?after=seq` is a natural extension; currently optional because logs are small and `seq` exists.
+
+## 8) Free-form rehash:
+
+The big picture:
+🦦🦦🦦 (many WW processes) <---> 🦉(one our OO server)  <---> 📱🖥️💻 (some web-based UI apps contacting OO to collect tasks states and results)
+
+On delivery semantics: it's good to understand what happens before 🦦→🦉: 
+✅it all starts on 📱🖥️💻 when a user poses a task. The task is assigned a TaskID. 
+✅then a POST happens this way📱🖥️💻→🦉, with the TaskID. 
+✅then 🦉 launches a 🦦 for this task. 
+✅No 🦦 is dumb, but it's focused and introverted. 
+There can be heavy calculations, for 15-20 minutes, with some intermediate results each few seconds. 
+✅🦦→🦉 happens with some intermediate results many times; 
+✅🦦→🦉 happens with final results and then 🦦 is gone. 
+✅meanwhile, a GET can happen this way 📱🖥️💻→🦉, with the TaskID. 
+Here's a design of endpoints for 📱🖥️💻→🦉 side:
+{/tasks/hello, GET} route
+{/tasks, GET} route
+{/tasks/:id, GET} route
+{/tasks, POST} route
+{/tasks/:id, DELETE} route
+✅(the cleanup policy) : once 🦉 dumps a finalized tasks events towards 📱🖥️💻, he can forget it. 
+✅(WW lifetimes): once 🦦 done calculating a task and dumps it final results to 🦉, 🦦 is free.
+
+
+---
+End of doc.
+
