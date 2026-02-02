@@ -1,4 +1,4 @@
-# Oscar–Walter Task Pipeline Design (v0.5)
+# Task Pipeline Design for UI-Oscar–Walter Nodes
 
 Status: draft (agreed baseline)  
 Scope: chat-scoped; nothing sacred; everything versioned.  
