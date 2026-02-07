@@ -7,3 +7,9 @@ build/
 npm-debug.log*
 yarn-error.log*
 package-lock.j*
+/.vscode/launch.json
+/bodealer-server/package-lock.json
+/bodealer-server/test/pytest/__pycache__/test_all.cpython-311-pytest-9.0.2.pyc
+/bodealer-server/test/pytest/__pycache__/test_sample.cpython-311-pytest-9.0.2.pyc
+/bodealer-server/package-lock.json
+/pytestdebug.log
