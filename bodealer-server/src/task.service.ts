@@ -22,7 +22,8 @@ import { TaskCreateDTO } from './dto/task.create.dto';
 const EXE_1 = 'Walrus.exe';
 const CONFIG_FILE = 'start_from.txt';
 const LOG_FILE = 'logs.txt';
-const RESULT_FILE = 'rescalc.txt';
+const RESULT_FILE = 'rescal.txt';
+const LEGACY_RESULT_FILE = 'rescalc.txt';
 const STATE_FILE = 'state.json';
 const MAX_LOG_TAIL_BYTES = 64 * 1024;
 
@@ -115,7 +116,11 @@ export class TaskService implements OnModuleInit {
     const state = await this.readJsonIfExists<Partial<TaskState>>(
       path.join(jobDir, STATE_FILE),
     );
-    const result = await this.readJsonIfExists(path.join(jobDir, RESULT_FILE));
+    const resultFile = await this.findResultFile(jobDir);
+    const resultText =
+      (task?.status ?? state?.status) === TaskStatus.Completed && resultFile
+        ? await fsp.readFile(resultFile.path, 'utf8')
+        : null;
     const logTail = await this.readTail(
       path.join(jobDir, LOG_FILE),
       MAX_LOG_TAIL_BYTES,
@@ -129,8 +134,9 @@ export class TaskService implements OnModuleInit {
       finishedAt: task?.finishedAt ?? state?.finishedAt ?? null,
       exitCode: task?.exitCode ?? state?.exitCode ?? null,
       error: task?.error ?? state?.error ?? null,
-      hasResult: result !== null,
-      result,
+      hasResult: resultFile !== null,
+      resultText,
+      resultFileName: resultFile?.name ?? null,
       logTail,
     };
   }
@@ -424,5 +430,19 @@ export class TaskService implements OnModuleInit {
     } catch {
       return raw as T;
     }
+  }
+
+  private async findResultFile(
+    jobDir: string,
+  ): Promise<{ path: string; name: string } | null> {
+    for (const name of [RESULT_FILE, LEGACY_RESULT_FILE]) {
+      const filePath = path.join(jobDir, name);
+
+      if (await this.fileExists(filePath)) {
+        return { path: filePath, name };
+      }
+    }
+
+    return null;
   }
 }

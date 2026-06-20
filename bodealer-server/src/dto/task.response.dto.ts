@@ -37,7 +37,13 @@ export class TaskResponseDTO {
   @IsBoolean()
   hasResult: boolean;
 
-  result?: unknown;
+  @IsOptional()
+  @IsString()
+  resultText?: string | null;
+
+  @IsOptional()
+  @IsString()
+  resultFileName?: string | null;
 
   @IsOptional()
   @IsString()
