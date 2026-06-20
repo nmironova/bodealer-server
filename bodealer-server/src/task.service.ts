@@ -44,7 +44,7 @@ type TaskState = {
 
 @Injectable()
 export class TaskService implements OnModuleInit {
-  private readonly rootDir = this.resolveRootDir();
+  private readonly rootDir = path.resolve(__dirname, '..');
   private readonly exesDir = path.join(this.rootDir, 'exes');
   private readonly jobsDir = path.join(this.rootDir, 'jobs');
   private readonly tasks = new Map<string, TaskState>();
@@ -351,19 +351,6 @@ export class TaskService implements OnModuleInit {
     }
 
     return `${out.join('\r\n')}\r\n`;
-  }
-
-  private resolveRootDir(): string {
-    const candidates = [
-      process.cwd(),
-      path.resolve(process.cwd(), '..'),
-      path.resolve(__dirname, '..', '..', '..'),
-    ];
-
-    return (
-      candidates.find((candidate) => fs.existsSync(path.join(candidate, 'exes'))) ??
-      process.cwd()
-    );
   }
 
   private assertTaskId(id: string): void {
