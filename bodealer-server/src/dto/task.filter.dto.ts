@@ -2,7 +2,7 @@ import { Type } from 'class-transformer';
 import { IsEnum, IsInt, IsOptional, Min, IsIn } from 'class-validator';
 import { TaskStatus } from './task.response.dto';
 
-export type TaskSortBy = 'name' | 'boardsNumber' | 'status';
+export type TaskSortBy = 'createdAt' | 'startedAt' | 'finishedAt' | 'status';
 export type SortDir = 'asc' | 'desc';
 
 export class TaskFilterDTO {
@@ -23,8 +23,8 @@ export class TaskFilterDTO {
   status?: TaskStatus;
 
   @IsOptional()
-  @IsIn(['name', 'boardsNumber', 'status'] as const)
-  sortBy: TaskSortBy = 'name';
+  @IsIn(['createdAt', 'startedAt', 'finishedAt', 'status'] as const)
+  sortBy: TaskSortBy = 'createdAt';
 
   @IsOptional()
   @IsIn(['asc', 'desc'] as const)

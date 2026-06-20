@@ -1,9 +1,10 @@
-import { IsNumber, IsString } from 'class-validator';
+import { IsBoolean, IsNumber, IsOptional, IsString } from 'class-validator';
 
 export enum TaskStatus {
-  InProgress = 'InProgress',
-  CompletedOk = 'CompletedOk',
-  CompletedFail = 'CompletedFail',
+  Queued = 'queued',
+  Running = 'running',
+  Completed = 'completed',
+  Failed = 'failed',
 }
 
 export class TaskResponseDTO {
@@ -11,15 +12,67 @@ export class TaskResponseDTO {
   id: string;
 
   @IsString()
-  name: string;
-
-  @IsNumber()
-  boardsNumber: number;
-
   status: TaskStatus;
+
+  @IsOptional()
+  @IsNumber()
+  pid?: number | null;
+
+  @IsOptional()
+  @IsString()
+  startedAt?: string | null;
+
+  @IsOptional()
+  @IsString()
+  finishedAt?: string | null;
+
+  @IsOptional()
+  @IsNumber()
+  exitCode?: number | null;
+
+  @IsOptional()
+  @IsString()
+  error?: string | null;
+
+  @IsBoolean()
+  hasResult: boolean;
+
+  result?: unknown;
+
+  @IsOptional()
+  @IsString()
+  logTail?: string | null;
+}
+
+export class TaskListItemDTO {
+  @IsString()
+  id: string;
+
+  @IsString()
+  status: TaskStatus;
+
+  @IsOptional()
+  @IsString()
+  createdAt?: string;
+
+  @IsOptional()
+  @IsString()
+  startedAt?: string;
+
+  @IsOptional()
+  @IsString()
+  finishedAt?: string;
+
+  @IsOptional()
+  @IsNumber()
+  exitCode?: number | null;
+
+  @IsOptional()
+  @IsString()
+  error?: string | null;
 }
 
 export class TaskListResponseDTO {
-  tasks: TaskResponseDTO[];
+  tasks: TaskListItemDTO[];
   totalElements: number;
 }

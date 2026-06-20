@@ -7,7 +7,10 @@ import {
   Param,
   Query,
   Delete,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { TaskService } from './task.service';
 import { TaskResponseDTO, TaskListResponseDTO } from './dto/task.response.dto';
 import { TaskFilterDTO } from './dto/task.filter.dto';
@@ -32,12 +35,14 @@ export class TaskController {
     return this.taskService.getById(id);
   }
 
-  @HttpCode(201)
+  @HttpCode(202)
   @Post('')
+  @UseInterceptors(FileInterceptor('configFile'))
   async createTask(
     @Body() taskCreateDTO: TaskCreateDTO,
+    @UploadedFile() configFile?: { buffer: Buffer },
   ): Promise<TaskResponseDTO> {
-    return this.taskService.create(taskCreateDTO);
+    return this.taskService.create(taskCreateDTO, configFile);
   }
 
   @Delete(':id')

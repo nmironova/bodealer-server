@@ -1,12 +1,23 @@
-import { IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsIn, IsOptional, IsString } from 'class-validator';
 
 export class TaskCreateDTO {
+  @IsOptional()
   @IsString()
-  name: string;
+  taskName?: string;
 
   @IsOptional()
-  @IsNumber()
-  boardsNumber?: number = 10000;
+  @IsString()
+  configText?: string;
 
-  // TODO: add something meangfull
+  @IsOptional()
+  @IsString()
+  configTemplateText?: string;
+
+  @IsOptional()
+  @IsString()
+  configBase64?: string;
+
+  @IsOptional()
+  @IsIn(['utf8', 'win1251'])
+  encoding?: 'utf8' | 'win1251' = 'utf8';
 }
