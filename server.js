@@ -4,46 +4,40 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const fsp = fs.promises;
-const { spawn } = require('child_process');
+const { spawn, execFile } = require('child_process');
+const { promisify } = require('util');
 const { randomUUID } = require('crypto');
 const multer = require('multer');
-const upload = multer({ limits: { fileSize: 5 * 1024 * 1024 } }); // 5MB
 
-const app = express();
-app.use(express.json({ limit: '1mb' }));
-
-// ---- Config (edit these) ----
-const PORT = process.env.PORT || 3001;
-
-const ROOT_DIR = __dirname;
-const EXES_DIR = path.join(ROOT_DIR, 'exes');
-const JOBS_DIR = path.join(ROOT_DIR, 'jobs');
-
-const EXE_1 = 'Walrus.exe';
-
-// Files produced/used inside each job folder
+const execFileAsync = promisify(execFile);
+const upload = multer({ limits: { fileSize: 5 * 1024 * 1024 } });
 const CONFIG_FILE = 'start_from.txt';
-const LOG_FILE = 'logs.txt';        
-const RESULT_FILE = 'rescalc.txt';  
+const LOG_FILE = 'logs.txt';
+const RESULT_FILE = 'rescalc.txt';
 const STATE_FILE = 'state.json';
+const MAX_LOG_TAIL_BYTES = 64 * 1024;
+const TASK_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-const MAX_LOG_TAIL_BYTES = 64 * 1024; // 64KB tail in responses
-
-// In-memory registry (good enough for 1-instance service).
-// If you need multi-instance / restarts, read state.json on startup.
-const tasks = new Map(); // id -> { id, dir, status, pid, startedAt, finishedAt, exitCode, error }
-
-// ---- Helpers ----
-async function ensureDir(p) {
-  await fsp.mkdir(p, { recursive: true });
+function executableName(platform = process.platform) {
+  return platform === 'win32' ? 'Walrus.exe' : 'walrus';
 }
 
-async function fileExists(p) {
+function resolveWalrusPath({ env = process.env, platform = process.platform, rootDir = __dirname } = {}) {
+  if (env.WALRUS_PATH) return path.resolve(env.WALRUS_PATH);
+  const binDir = env.BODEALER_BIN_DIR
+    ? path.resolve(env.BODEALER_BIN_DIR)
+    : path.join(rootDir, 'exes', platform);
+  return path.join(binDir, executableName(platform));
+}
+
+async function validateWalrus(walrusPath, platform = process.platform) {
+  const mode = platform === 'win32' ? fs.constants.F_OK : fs.constants.F_OK | fs.constants.X_OK;
   try {
-    await fsp.access(p, fs.constants.F_OK);
-    return true;
-  } catch {
-    return false;
+    const stat = await fsp.stat(walrusPath);
+    if (!stat.isFile()) throw new Error('not a file');
+    await fsp.access(walrusPath, mode);
+  } catch (error) {
+    throw new Error(`Walrus is missing or not executable at ${walrusPath}: ${error.message}`);
   }
 }
 
@@ -51,308 +45,288 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-function selectTaskInConfig(configText, taskName) {
-    if (!taskName) return configText;
-  
-    const lines = configText.split(/\r?\n/);
-  
-    const taskRe = /^\s*(\/\/\s*)?TASK NAME\s*:\s*([A-Za-z0-9_]+)\s*$/;
-    let found = false;
-  
-    const out = lines.map((line) => {
-      const m = line.match(taskRe);
-      if (!m) return line;
-  
-      const name = m[2];
-      if (name === taskName) {
-        found = true;
-        return `TASK NAME:${name}`;
-      }
-      return `//TASK NAME:${name}`;
-    });
-  
-    if (!found) {
-      // Fail fast: better than silently running wrong task.
-      throw new Error(`TASK NAME:${taskName} not found in config`);
-    }
-  
-    return out.join('\r\n') + '\r\n';
-  }
-  
-  function payloadToConfigTxt(payload) {
-
-    if (typeof payload.configBase64 === 'string') {
-        const buf = Buffer.from(payload.configBase64, 'base64');
-        const text = buf.toString('utf8');
-        return selectTaskInConfig(text, payload.taskName);
-      }
-    // mode 1: raw config
-    if (typeof payload.configText === 'string') {
-      return payload.configText.endsWith('\n')
-        ? payload.configText
-        : payload.configText + '\r\n';
-    }
-  
-    // mode 2: template + select a task
-    if (typeof payload.configTemplateText === 'string') {
-      return selectTaskInConfig(payload.configTemplateText, payload.taskName);
-    }
-  
-    throw new Error('Payload must provide configText OR configTemplateText (+ taskName)');
-  }
-  
-async function readTail(filePath, maxBytes) {
-  if (!(await fileExists(filePath))) return null;
-
-  const stat = await fsp.stat(filePath);
-  const size = stat.size;
-  const start = Math.max(0, size - maxBytes);
-
-  const fd = await fsp.open(filePath, 'r');
+async function exists(filePath) {
   try {
-    const len = size - start;
-    const buf = Buffer.alloc(len);
-    await fd.read(buf, 0, len, start);
-    return buf.toString('utf8');
-  } finally {
-    await fd.close();
-  }
-}
-
-async function readJsonIfExists(filePath) {
-  if (!(await fileExists(filePath))) return null;
-  const raw = await fsp.readFile(filePath, 'utf8');
-  try {
-    return JSON.parse(raw);
+    await fsp.access(filePath);
+    return true;
   } catch {
-    // If result is not JSON, return raw text
-    return raw;
+    return false;
   }
 }
 
-async function writeState(jobDir, stateObj) {
-  const p = path.join(jobDir, STATE_FILE);
-  await fsp.writeFile(p, JSON.stringify(stateObj, null, 2), 'utf8');
-}
-
-// Start the job process
-async function startJob(task) {
-  const jobDir = task.dir;
-
-  task.status = 'running';
-  task.startedAt = nowIso();
-  await writeState(jobDir, {
-    id: task.id,
-    status: task.status,
-    startedAt: task.startedAt,
-  });
-
-  // Run Walrus.exe from the shared EXES_DIR
-  const exePath = path.join(EXES_DIR, EXE_1);
-
-  if (!(await fileExists(exePath))) {
-    throw new Error(`Exe not found: ${exePath}`);
-  }
-
-  const configPath = path.join(jobDir, CONFIG_FILE);
-  const resultPath = path.join(jobDir, RESULT_FILE);
-  const args = ['-exitondone', '-cfgname', configPath, '-logresult', resultPath];
-
-  console.log('exePath=', exePath);
-  console.log('args=', args);
-  args
-  const child = spawn(
-  'cmd.exe',
-    ['/c', 'start', '""', '/D', EXES_DIR, EXE_1, ...args],
-    {
-       windowsHide: true,      // hides the *launcher*, not the started window
-       detached: true,
-       stdio: 'ignore',        // important: no pipes
+function selectTaskInConfig(configText, taskName) {
+  if (!taskName) return configText;
+  let found = false;
+  const taskRe = /^\s*(\/\/\s*)?TASK NAME\s*:\s*([A-Za-z0-9_]+)\s*$/;
+  const lines = configText.split(/\r?\n/).map((line) => {
+    const match = line.match(taskRe);
+    if (!match) return line;
+    if (match[2] === taskName) {
+      found = true;
+      return `TASK NAME:${match[2]}`;
     }
-  );
-
-  child.unref();
-
-  task.pid = null;
-
-  // log stdout/stderr into job log
-  const logPath = path.join(jobDir, LOG_FILE);
-  const logStream = fs.createWriteStream(logPath, { flags: 'a' });
-
-  await writeState(jobDir, {
-    id: task.id,
-    status: task.status,
-    startedAt: task.startedAt,
-    pid: task.pid,
-    args,
-    exePath,
+    return `//TASK NAME:${match[2]}`;
   });
-
-  child.stdout.on('data', (chunk) => logStream.write(chunk));
-  child.stderr.on('data', (chunk) => logStream.write(chunk));
-
-  child.on('error', async (err) => {
-    task.status = 'failed';
-    task.error = String(err?.message || err);
-    task.finishedAt = nowIso();
-    await writeState(jobDir, {
-      id: task.id,
-      status: task.status,
-      startedAt: task.startedAt,
-      finishedAt: task.finishedAt,
-      error: task.error,
-      pid: task.pid ?? null,
-    });
-    logStream.end();
-  });
-
-  child.on('close', async (code) => {
-    task.exitCode = code;
-    task.finishedAt = nowIso();
-
-    const hasResult = await fileExists(resultPath);
-
-    // if your exe returns 0 but result is not always produced, relax this rule
-    task.status = code === 0 ? 'completed' : 'failed';
-
-    await writeState(jobDir, {
-      id: task.id,
-      status: task.status,
-      startedAt: task.startedAt,
-      finishedAt: task.finishedAt,
-      exitCode: task.exitCode,
-      hasResult,
-    });
-
-    logStream.end();
-  });
+  if (!found) throw new Error(`TASK NAME:${taskName} not found in config`);
+  return `${lines.join('\r\n')}\r\n`;
 }
 
+async function readTail(filePath, maxBytes) {
+  if (!(await exists(filePath))) return null;
+  const stat = await fsp.stat(filePath);
+  const start = Math.max(0, stat.size - maxBytes);
+  const handle = await fsp.open(filePath, 'r');
+  try {
+    const buffer = Buffer.alloc(stat.size - start);
+    await handle.read(buffer, 0, buffer.length, start);
+    return buffer.toString('utf8');
+  } finally {
+    await handle.close();
+  }
+}
 
-// ---- Routes ----
+async function readText(filePath) {
+  return (await exists(filePath)) ? fsp.readFile(filePath, 'utf8') : null;
+}
 
-// Create task
-app.post('/tasks', upload.single('configFile'), async (req, res) => {
+async function readState(jobDir) {
+  try {
+    return JSON.parse(await fsp.readFile(path.join(jobDir, STATE_FILE), 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+async function writeState(task) {
+  const { child, dir, ...state } = task;
+  await fsp.writeFile(path.join(dir, STATE_FILE), JSON.stringify(state, null, 2), 'utf8');
+}
+
+async function unixDescendants(rootPid) {
+  const { stdout } = await execFileAsync('ps', ['-A', '-o', 'pid=', '-o', 'ppid=']);
+  const children = new Map();
+  for (const line of stdout.trim().split('\n')) {
+    const [pid, ppid] = line.trim().split(/\s+/).map(Number);
+    if (!pid || !ppid) continue;
+    if (!children.has(ppid)) children.set(ppid, []);
+    children.get(ppid).push(pid);
+  }
+  const result = [];
+  const visit = (pid) => {
+    for (const childPid of children.get(pid) || []) {
+      visit(childPid);
+      result.push(childPid);
+    }
+  };
+  visit(rootPid);
+  return result;
+}
+
+function signalIfAlive(pid, signal) {
+  try {
+    process.kill(pid, signal);
+  } catch (error) {
+    if (error.code !== 'ESRCH') throw error;
+  }
+}
+
+async function terminateProcessTree(task, platform = process.platform) {
+  if (!task.child || task.child.exitCode !== null || !task.pid) return;
+  if (platform === 'win32') {
     try {
-      if (!req.file) {
-        return res.status(400).json({ error: 'configFile is required' });
-      }
-  
-      await ensureDir(JOBS_DIR);
-  
-      const id = randomUUID();
-      const jobDir = path.join(JOBS_DIR, id);
-      await ensureDir(jobDir);
-  
-      const taskName = req.body.taskName;
-      const encoding = (req.body.encoding || 'utf8').toLowerCase();
-  
-      // NOTE: "binary" is NOT real win1251. If you truly need cp1251, use iconv-lite (tell me).
-      const configText =
-        encoding === 'win1251'
-          ? req.file.buffer.toString('binary')
-          : req.file.buffer.toString('utf8');
-  
-      const finalConfig = taskName ? selectTaskInConfig(configText, taskName) : configText;
-  
-      // Write config file with the name your exes expect
-      await fsp.writeFile(
-        path.join(jobDir, CONFIG_FILE),
-        finalConfig.endsWith('\n') ? finalConfig : finalConfig + '\r\n',
-        encoding === 'win1251' ? 'binary' : 'utf8'
-      );
-  
-      const task = {
-        id,
-        dir: jobDir,
-        status: 'queued',
-        pid: null,
-        startedAt: null,
-        finishedAt: null,
-        exitCode: null,
-        error: null,
-      };
-      tasks.set(id, task);
-  
-      await writeState(jobDir, { id, status: task.status, createdAt: nowIso() });
-  
-      startJob(task).catch(async (e) => {
-        task.status = 'failed';
-        task.error = String(e?.message || e);
-        task.finishedAt = nowIso();
-        await writeState(jobDir, {
-          id: task.id,
-          status: task.status,
-          error: task.error,
-          finishedAt: task.finishedAt,
-          pid: task.pid ?? null,
+      await execFileAsync('taskkill.exe', ['/pid', String(task.pid), '/T', '/F'], { windowsHide: true });
+    } catch (error) {
+      if (task.child.exitCode === null) throw error;
+    }
+    return;
+  }
+
+  const descendants = await unixDescendants(task.pid);
+  for (const pid of descendants) signalIfAlive(pid, 'SIGTERM');
+  signalIfAlive(task.pid, 'SIGTERM');
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  for (const pid of [...descendants, task.pid]) signalIfAlive(pid, 'SIGKILL');
+}
+
+function createApp(options = {}) {
+  const rootDir = options.rootDir || __dirname;
+  const jobsDir = options.jobsDir || path.join(rootDir, 'jobs');
+  const platform = options.platform || process.platform;
+  const env = options.env || process.env;
+  const tasks = new Map();
+  const app = express();
+  app.use(express.json({ limit: '1mb' }));
+
+  async function finishTask(task, updates) {
+    Object.assign(task, updates, { finishedAt: task.finishedAt || nowIso() });
+    await writeState(task);
+  }
+
+  async function startJob(task, walrusPath) {
+    const configPath = path.join(task.dir, CONFIG_FILE);
+    const resultPath = path.join(task.dir, RESULT_FILE);
+    const args = ['-cfgname', configPath, '-logresult', resultPath, '-exitondone'];
+    const logStream = fs.createWriteStream(path.join(task.dir, LOG_FILE), { flags: 'a' });
+    const child = spawn(walrusPath, args, {
+      cwd: path.dirname(walrusPath),
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    task.child = child;
+    task.pid = child.pid || null;
+    task.status = 'running';
+    task.startedAt = nowIso();
+    task.walrusPath = walrusPath;
+    task.args = args;
+
+    child.stdout.on('data', (chunk) => logStream.write(chunk));
+    child.stderr.on('data', (chunk) => logStream.write(chunk));
+    child.stdout.on('error', () => {});
+    child.stderr.on('error', () => {});
+    logStream.on('error', (error) => {
+      task.error = task.error || `Log write failed: ${error.message}`;
+    });
+
+    let spawnError = null;
+    child.once('error', (error) => {
+      spawnError = error;
+      if (task.status !== 'cancelled') {
+        finishTask(task, { status: 'failed', error: error.message }).catch((stateError) => {
+          task.error = `${error.message}; state write failed: ${stateError.message}`;
         });
-      });
-  
+      }
+    });
+    child.once('close', (code, signal) => {
+      task.exitCode = code;
+      task.signal = signal;
+      task.child = null;
+      let stateUpdate;
+      if (task.status !== 'cancelled' && !spawnError) {
+        stateUpdate = finishTask(task, code === 0
+          ? { status: 'completed', error: null }
+          : { status: 'failed', error: `Walrus exited with code ${code}${signal ? ` (${signal})` : ''}` });
+      } else {
+        stateUpdate = writeState(task);
+      }
+      stateUpdate.catch((error) => {
+        task.error = task.error || `State write failed: ${error.message}`;
+      }).finally(() => logStream.end());
+    });
+    await writeState(task);
+  }
+
+  app.post('/tasks', upload.single('configFile'), async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: 'configFile is required' });
+      const walrusPath = resolveWalrusPath({ env, platform, rootDir });
+      await validateWalrus(walrusPath, platform);
+      await fsp.mkdir(jobsDir, { recursive: true });
+      const id = randomUUID();
+      const jobDir = path.join(jobsDir, id);
+      await fsp.mkdir(jobDir);
+      const encoding = String(req.body.encoding || 'utf8').toLowerCase();
+      const configText = req.file.buffer.toString(encoding === 'win1251' ? 'binary' : 'utf8');
+      const finalConfig = selectTaskInConfig(configText, req.body.taskName);
+      await fsp.writeFile(path.join(jobDir, CONFIG_FILE), finalConfig.endsWith('\n') ? finalConfig : `${finalConfig}\r\n`, encoding === 'win1251' ? 'binary' : 'utf8');
+      const task = { id, dir: jobDir, status: 'queued', pid: null, createdAt: nowIso(), startedAt: null, finishedAt: null, exitCode: null, error: null, child: null };
+      tasks.set(id, task);
+      await writeState(task);
+      try {
+        await startJob(task, walrusPath);
+      } catch (error) {
+        await finishTask(task, { status: 'failed', error: error.message });
+      }
       return res.status(202).json({ id, status: task.status });
-    } catch (e) {
-      return res.status(500).json({ error: String(e?.message || e) });
+    } catch (error) {
+      const status = /missing or not executable/.test(error.message) ? 503 : 500;
+      return res.status(status).json({ error: error.message });
     }
   });
 
-// Get status (+ tail logs + result if exists)
-app.get('/tasks/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const task = tasks.get(id);
-    // If server restarted, task might not be in memory. Fall back to disk.
-    const jobDir = path.join(JOBS_DIR, id);
-    if (!task && !(await fileExists(jobDir))) {
-      return res.status(404).json({ error: 'Task not found' });
+  app.get('/tasks/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!TASK_ID_RE.test(id)) return res.status(400).json({ error: 'Invalid task ID' });
+      const task = tasks.get(id);
+      const jobDir = path.join(jobsDir, id);
+      if (!task && !(await exists(jobDir))) return res.status(404).json({ error: 'Task not found' });
+      const state = task || await readState(jobDir);
+      const resultText = await readText(path.join(jobDir, RESULT_FILE));
+      return res.json({
+        id,
+        status: state?.status || 'unknown',
+        pid: state?.pid ?? null,
+        startedAt: state?.startedAt ?? null,
+        finishedAt: state?.finishedAt ?? null,
+        exitCode: state?.exitCode ?? null,
+        error: state?.error ?? null,
+        hasResult: resultText !== null,
+        resultText: resultText ?? undefined,
+        result: resultText ?? undefined,
+        logTail: await readTail(path.join(jobDir, LOG_FILE), MAX_LOG_TAIL_BYTES),
+      });
+    } catch (error) {
+      return res.status(500).json({ error: error.message });
     }
+  });
 
-    const logTail = await readTail(path.join(jobDir, LOG_FILE), MAX_LOG_TAIL_BYTES);
-    const result = await readJsonIfExists(path.join(jobDir, RESULT_FILE));
-    const state = await readJsonIfExists(path.join(jobDir, STATE_FILE));
-
-    return res.json({
-      id,
-      status: task?.status ?? state?.status ?? 'unknown',
-      pid: task?.pid ?? null,
-      startedAt: task?.startedAt ?? state?.startedAt ?? null,
-      finishedAt: task?.finishedAt ?? state?.finishedAt ?? null,
-      exitCode: task?.exitCode ?? state?.exitCode ?? null,
-      error: task?.error ?? state?.error ?? null,
-      hasResult: !!result,
-      result,
-      logTail,
-    });
-  } catch (e) {
-    return res.status(500).json({ error: String(e?.message || e) });
-  }
-});
-
-// Optional: list tasks (reads jobs folder)
-app.get('/tasks', async (_req, res) => {
-  try {
-    if (!(await fileExists(JOBS_DIR))) return res.json([]);
-
-    const ids = await fsp.readdir(JOBS_DIR);
-    // Return lightweight info
-    const out = [];
-    for (const id of ids) {
-      const jobDir = path.join(JOBS_DIR, id);
-      const state = await readJsonIfExists(path.join(jobDir, STATE_FILE));
-      out.push({ id, ...(state || {}) });
+  app.delete('/tasks/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!TASK_ID_RE.test(id)) return res.status(400).json({ error: 'Invalid task ID' });
+      const task = tasks.get(id);
+      if (!task) return res.status(404).json({ error: 'Task not found or is no longer active' });
+      if (task.status === 'running' || task.status === 'queued') {
+        task.status = 'cancelled';
+        task.finishedAt = nowIso();
+        await writeState(task);
+        try {
+          await terminateProcessTree(task, platform);
+        } catch (error) {
+          task.error = `Cancellation failed: ${error.message}`;
+          await writeState(task);
+          return res.status(500).json({ error: task.error });
+        }
+      }
+      return res.json({ id, status: task.status });
+    } catch (error) {
+      return res.status(500).json({ error: error.message });
     }
-    // newest first if createdAt exists
-    out.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
-    res.json(out);
-  } catch (e) {
-    res.status(500).json({ error: String(e?.message || e) });
-  }
-});
+  });
 
-// ---- Boot ----
-app.listen(PORT, async () => {
-  await ensureDir(JOBS_DIR);
-  console.log(`Bodealer service listening on http://localhost:${PORT}`);
-  console.log(`Exes dir: ${EXES_DIR}`);
-  console.log(`Jobs dir: ${JOBS_DIR}`);
-});
+  app.get('/tasks', async (_req, res) => {
+    try {
+      if (!(await exists(jobsDir))) return res.json([]);
+      const output = [];
+      for (const id of await fsp.readdir(jobsDir)) {
+        if (!TASK_ID_RE.test(id)) continue;
+        const state = await readState(path.join(jobsDir, id));
+        if (state) output.push({ id, ...state });
+      }
+      output.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+      return res.json(output);
+    } catch (error) {
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.locals.tasks = tasks;
+  app.locals.jobsDir = jobsDir;
+  return app;
+}
+
+async function startServer() {
+  const port = Number(process.env.PORT || 3001);
+  const app = createApp();
+  await fsp.mkdir(app.locals.jobsDir, { recursive: true });
+  return app.listen(port, () => {
+    console.log(`Bodealer service listening on http://localhost:${port}`);
+    console.log(`Walrus: ${resolveWalrusPath()}`);
+    console.log(`Jobs dir: ${app.locals.jobsDir}`);
+  });
+}
+
+if (require.main === module) startServer();
+
+module.exports = { createApp, executableName, resolveWalrusPath, validateWalrus, startServer };
