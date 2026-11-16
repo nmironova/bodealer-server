@@ -13,3 +13,5 @@ package-lock.j*
 /bodealer-server/test/pytest/__pycache__/test_sample.cpython-311-pytest-9.0.2.pyc
 /bodealer-server/package-lock.json
 /pytestdebug.log
+/jobs/
+.DS_Store

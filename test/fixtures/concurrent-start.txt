@@ -1,0 +1,23 @@
+TASK NAME:should bid 6nt?
+TASK_TYPE:ONE_SIDED_BIDDING_LEVEL
+
+----------
+should bid 6nt?
+
+HAND: N:AK7.6.AT874.AKJ7
+PRIMARY SCORER: V6N BY N
+POSTMORTEM: AUTO
+
+FILTERS:
+    SOUTH: PointsRange, 11, 12
+    SOUTH: PointsSuitAtLeast, HRT, 3
+    SOUTH: PointsSuitLimit, HRT, 10
+    SOUTH: SpadesLen, 0, 3
+    SOUTH: HeartsLen, 6, 6
+    SOUTH: DiamondsLen, 0, 3
+    SOUTH: ClubsLen, 0, 3
+
+    EAST: NoOvercall
+    WEST: NoOvercall
+----------
+SCALE: 20

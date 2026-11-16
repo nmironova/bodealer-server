@@ -97,29 +97,19 @@ async function readState(jobDir) {
   }
 }
 
-async function writeState(task) {
+// Serialize snapshots per task and rename atomically so polling/restarts never
+// observe half-written JSON or an older write overtaking a terminal state.
+const stateWrites = new WeakMap();
+function writeState(task) {
   const { child, dir, ...state } = task;
-  await fsp.writeFile(path.join(dir, STATE_FILE), JSON.stringify(state, null, 2), 'utf8');
-}
-
-async function unixDescendants(rootPid) {
-  const { stdout } = await execFileAsync('ps', ['-A', '-o', 'pid=', '-o', 'ppid=']);
-  const children = new Map();
-  for (const line of stdout.trim().split('\n')) {
-    const [pid, ppid] = line.trim().split(/\s+/).map(Number);
-    if (!pid || !ppid) continue;
-    if (!children.has(ppid)) children.set(ppid, []);
-    children.get(ppid).push(pid);
-  }
-  const result = [];
-  const visit = (pid) => {
-    for (const childPid of children.get(pid) || []) {
-      visit(childPid);
-      result.push(childPid);
-    }
-  };
-  visit(rootPid);
-  return result;
+  const json = JSON.stringify(state, null, 2);
+  const pending = (stateWrites.get(task) || Promise.resolve()).catch(() => {}).then(async () => {
+    const temporary = path.join(dir, `${STATE_FILE}.tmp`);
+    await fsp.writeFile(temporary, json, 'utf8');
+    await fsp.rename(temporary, path.join(dir, STATE_FILE));
+  });
+  stateWrites.set(task, pending);
+  return pending;
 }
 
 function signalIfAlive(pid, signal) {
@@ -131,7 +121,7 @@ function signalIfAlive(pid, signal) {
 }
 
 async function terminateProcessTree(task, platform = process.platform) {
-  if (!task.child || task.child.exitCode !== null || !task.pid) return;
+  if (!task.pid) return;
   if (platform === 'win32') {
     try {
       await execFileAsync('taskkill.exe', ['/pid', String(task.pid), '/T', '/F'], { windowsHide: true });
@@ -141,20 +131,57 @@ async function terminateProcessTree(task, platform = process.platform) {
     return;
   }
 
-  const descendants = await unixDescendants(task.pid);
-  for (const pid of descendants) signalIfAlive(pid, 'SIGTERM');
-  signalIfAlive(task.pid, 'SIGTERM');
+  // Each solver starts a new process group. Oscar inherits that group, so
+  // signalling it also covers children created during cancellation.
+  signalIfAlive(-task.pid, 'SIGTERM');
   await new Promise((resolve) => setTimeout(resolve, 500));
-  for (const pid of [...descendants, task.pid]) signalIfAlive(pid, 'SIGKILL');
+  signalIfAlive(-task.pid, 'SIGKILL');
 }
 
 function createApp(options = {}) {
   const rootDir = options.rootDir || __dirname;
-  const jobsDir = options.jobsDir || path.join(rootDir, 'jobs');
   const platform = options.platform || process.platform;
   const env = options.env || process.env;
+  const jobsDir = path.resolve(options.jobsDir || env.JOBS_DIR || path.join(rootDir, 'jobs'));
+  const maxConcurrentTasks = Number(env.MAX_CONCURRENT_TASKS ?? 2);
+  if (!Number.isSafeInteger(maxConcurrentTasks) || maxConcurrentTasks < 1) {
+    throw new Error('MAX_CONCURRENT_TASKS must be a positive integer');
+  }
   const tasks = new Map();
+  const queue = [];
+  const active = new Set();
+  const cancellations = new Map();
+  const admissions = new Set();
+  let stopping = false;
+  let shutdownPromise;
   const app = express();
+  const ready = (async () => {
+    await fsp.mkdir(jobsDir, { recursive: true });
+    for (const id of await fsp.readdir(jobsDir)) {
+      if (!TASK_ID_RE.test(id)) continue;
+      const dir = path.join(jobsDir, id);
+      const state = await readState(dir);
+      if (!state) throw new Error(`Cannot recover task state: ${dir}`);
+      const task = { ...state, id, dir, child: null };
+      tasks.set(id, task);
+      if (['running', 'queued'].includes(task.status)) {
+        task.error = `Interrupted by server restart (previously ${task.status}); resubmit explicitly`;
+        task.status = 'failed';
+        task.finishedAt = nowIso();
+        // Never signal a persisted PID: it can belong to an unrelated process.
+        await writeState(task);
+      }
+    }
+  })();
+  // Also used by startup; attach a handler immediately for embedded callers.
+  ready.catch(() => {});
+  app.use(async (req, res, next) => {
+    try {
+      await ready;
+      if (stopping && req.method !== 'GET') return res.status(503).json({ error: 'Server is shutting down' });
+      next();
+    } catch (error) { res.status(503).json({ error: `Startup recovery failed: ${error.message}` }); }
+  });
   app.use(express.json({ limit: '1mb' }));
 
   async function finishTask(task, updates) {
@@ -170,6 +197,7 @@ function createApp(options = {}) {
     const child = spawn(walrusPath, args, {
       cwd: path.dirname(walrusPath),
       windowsHide: true,
+      detached: platform !== 'win32',
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -189,34 +217,78 @@ function createApp(options = {}) {
     });
 
     let spawnError = null;
-    child.once('error', (error) => {
-      spawnError = error;
-      if (task.status !== 'cancelled') {
-        finishTask(task, { status: 'failed', error: error.message }).catch((stateError) => {
-          task.error = `${error.message}; state write failed: ${stateError.message}`;
-        });
-      }
-    });
+    child.once('error', (error) => { spawnError = error; });
     child.once('close', (code, signal) => {
-      task.exitCode = code;
-      task.signal = signal;
-      task.child = null;
-      let stateUpdate;
-      if (task.status !== 'cancelled' && !spawnError) {
-        stateUpdate = finishTask(task, code === 0
-          ? { status: 'completed', error: null }
-          : { status: 'failed', error: `Walrus exited with code ${code}${signal ? ` (${signal})` : ''}` });
-      } else {
-        stateUpdate = writeState(task);
-      }
-      stateUpdate.catch((error) => {
-        task.error = task.error || `State write failed: ${error.message}`;
-      }).finally(() => logStream.end());
+      // Keep the slot occupied until cancellation and state/log flushing finish.
+      (async () => {
+        await cancellations.get(task.id);
+        await new Promise((resolve) => logStream.end(resolve));
+        task.exitCode = code;
+        task.signal = signal;
+        if (task.status === 'running') {
+          Object.assign(task, code === 0 && !spawnError
+            ? { status: 'completed', error: task.error || null }
+            : { status: 'failed', error: spawnError?.message || `Walrus exited with code ${code}${signal ? ` (${signal})` : ''}` });
+        }
+        task.child = null;
+        await finishTask(task, {});
+      })().catch((error) => {
+        task.status = 'failed';
+        task.error = `Finalization failed: ${error.message}`;
+        console.error(task.id, task.error);
+      }).finally(() => {
+        active.delete(task.id);
+        cancellations.delete(task.id);
+        schedule();
+      });
     });
     await writeState(task);
   }
 
-  app.post('/tasks', upload.single('configFile'), async (req, res) => {
+  function schedule() {
+    while (!stopping && active.size < maxConcurrentTasks && queue.length) {
+      const task = queue.shift();
+      if (task.status !== 'queued') continue;
+      active.add(task.id); // Reserve synchronously before any asynchronous work.
+      startJob(task, task.walrusPath).catch(async (error) => {
+        task.error = error.message;
+        if (task.child) {
+          await cancelTask(task, 'failed', error.message);
+        } else {
+          await finishTask(task, { status: 'failed', error: error.message });
+          active.delete(task.id);
+          schedule();
+        }
+      }).catch((error) => console.error('Task startup failed:', task.id, error));
+    }
+  }
+
+  function cancelTask(task, status = 'cancelled', error = null) {
+    if (cancellations.has(task.id)) return cancellations.get(task.id);
+    if (!['queued', 'running'].includes(task.status)) return Promise.resolve();
+    const wasRunning = task.status === 'running';
+    Object.assign(task, { status, error, finishedAt: nowIso() });
+    const pending = (async () => {
+      // Termination must still happen if persisting the cancellation fails.
+      try { await writeState(task); }
+      finally { if (wasRunning) await terminateProcessTree(task, platform); }
+    })();
+    cancellations.set(task.id, pending);
+    pending.finally(() => {
+      if (!wasRunning) cancellations.delete(task.id);
+      schedule();
+    }).catch(() => {});
+    return pending;
+  }
+
+  app.get('/health', (_req, res) => res.status(stopping ? 503 : 200).json({
+    status: stopping ? 'stopping' : 'ok',
+    runningTasks: active.size,
+    queuedTasks: queue.filter((t) => t.status === 'queued').length,
+    maxConcurrentTasks,
+  }));
+
+  async function submitTask(req, res) {
     try {
       if (!req.file) return res.status(400).json({ error: 'configFile is required' });
       const walrusPath = resolveWalrusPath({ env, platform, rootDir });
@@ -224,24 +296,28 @@ function createApp(options = {}) {
       await fsp.mkdir(jobsDir, { recursive: true });
       const id = randomUUID();
       const jobDir = path.join(jobsDir, id);
-      await fsp.mkdir(jobDir);
       const encoding = String(req.body.encoding || 'utf8').toLowerCase();
       const configText = req.file.buffer.toString(encoding === 'win1251' ? 'binary' : 'utf8');
       const finalConfig = selectTaskInConfig(configText, req.body.taskName);
+      await fsp.mkdir(jobDir);
       await fsp.writeFile(path.join(jobDir, CONFIG_FILE), finalConfig.endsWith('\n') ? finalConfig : `${finalConfig}\r\n`, encoding === 'win1251' ? 'binary' : 'utf8');
       const task = { id, dir: jobDir, status: 'queued', pid: null, createdAt: nowIso(), startedAt: null, finishedAt: null, exitCode: null, error: null, child: null };
       tasks.set(id, task);
+      task.walrusPath = walrusPath;
       await writeState(task);
-      try {
-        await startJob(task, walrusPath);
-      } catch (error) {
-        await finishTask(task, { status: 'failed', error: error.message });
-      }
+      queue.push(task);
+      schedule();
       return res.status(202).json({ id, status: task.status });
     } catch (error) {
       const status = /missing or not executable/.test(error.message) ? 503 : 500;
       return res.status(status).json({ error: error.message });
     }
+  }
+  app.post('/tasks', upload.single('configFile'), (req, res) => {
+    if (stopping) return res.status(503).json({ error: 'Server is shutting down' });
+    const pending = submitTask(req, res);
+    admissions.add(pending);
+    pending.finally(() => admissions.delete(pending)).catch(() => {});
   });
 
   app.get('/tasks/:id', async (req, res) => {
@@ -277,18 +353,7 @@ function createApp(options = {}) {
       if (!TASK_ID_RE.test(id)) return res.status(400).json({ error: 'Invalid task ID' });
       const task = tasks.get(id);
       if (!task) return res.status(404).json({ error: 'Task not found or is no longer active' });
-      if (task.status === 'running' || task.status === 'queued') {
-        task.status = 'cancelled';
-        task.finishedAt = nowIso();
-        await writeState(task);
-        try {
-          await terminateProcessTree(task, platform);
-        } catch (error) {
-          task.error = `Cancellation failed: ${error.message}`;
-          await writeState(task);
-          return res.status(500).json({ error: task.error });
-        }
-      }
+      await cancelTask(task);
       return res.json({ id, status: task.status });
     } catch (error) {
       return res.status(500).json({ error: error.message });
@@ -311,6 +376,23 @@ function createApp(options = {}) {
     }
   });
 
+  app.locals.ready = ready;
+  app.locals.shutdown = () => {
+    if (shutdownPromise) return shutdownPromise;
+    stopping = true;
+    shutdownPromise = (async () => {
+      await ready;
+      await Promise.allSettled([...admissions]);
+      const outcomes = await Promise.allSettled([...tasks.values()].map((task) =>
+        cancelTask(task, 'failed', 'Interrupted by server shutdown; resubmit explicitly')));
+      const deadline = Date.now() + 10000;
+      while (active.size && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 20));
+      const failure = outcomes.find((result) => result.status === 'rejected');
+      if (failure) throw failure.reason;
+      if (active.size) throw new Error('Timed out waiting for solver processes to close');
+    })();
+    return shutdownPromise;
+  };
   app.locals.tasks = tasks;
   app.locals.jobsDir = jobsDir;
   return app;
@@ -319,14 +401,43 @@ function createApp(options = {}) {
 async function startServer() {
   const port = Number(process.env.PORT || 3001);
   const app = createApp();
-  await fsp.mkdir(app.locals.jobsDir, { recursive: true });
-  return app.listen(port, () => {
-    console.log(`Bodealer service listening on http://localhost:${port}`);
-    console.log(`Walrus: ${resolveWalrusPath()}`);
-    console.log(`Jobs dir: ${app.locals.jobsDir}`);
+  await app.locals.ready;
+  const server = await new Promise((resolve, reject) => {
+    const instance = app.listen(port, (error) => error ? reject(error) : resolve(instance));
+    instance.once('error', reject);
   });
+  console.log(`Bodealer service listening on port ${server.address().port}`);
+  console.log(`Walrus: ${resolveWalrusPath()}`);
+  console.log(`Jobs dir: ${app.locals.jobsDir}`);
+  let shuttingDown = false;
+  const stop = async () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    // Bound shutdown even if a client holds an HTTP connection open.
+    const timer = setTimeout(() => process.exit(1), 15000);
+    try {
+      const closed = new Promise((resolve) => server.close(resolve));
+      await app.locals.shutdown();
+      server.closeAllConnections();
+      await closed;
+      clearTimeout(timer);
+      process.removeListener('SIGTERM', stop);
+      process.removeListener('SIGINT', stop);
+    } catch (error) {
+      console.error('Shutdown failed:', error);
+      process.exitCode = 1;
+      // Keep the deadline armed if any solver or connection remains stuck.
+      timer.unref();
+    }
+  };
+  process.on('SIGTERM', stop);
+  process.on('SIGINT', stop);
+  return server;
 }
 
-if (require.main === module) startServer();
+if (require.main === module) startServer().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
 
 module.exports = { createApp, executableName, resolveWalrusPath, validateWalrus, startServer };

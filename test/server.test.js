@@ -17,10 +17,18 @@ async function fixture(source, name = 'walrus') {
   return { root, walrus, jobsDir: path.join(root, 'jobs') };
 }
 
-async function serve(setup, env = { WALRUS_PATH: setup.walrus }) {
+async function serve(t, setup, env = { WALRUS_PATH: setup.walrus }) {
   const app = createApp({ rootDir: setup.root, jobsDir: setup.jobsDir, env });
-  const server = await new Promise((resolve) => {
-    const instance = app.listen(0, '127.0.0.1', () => resolve(instance));
+  let server;
+  t.after(async () => {
+    await app.locals.shutdown();
+    if (server) await new Promise((resolve) => server.close(resolve));
+    await fsp.rm(setup.root, { recursive: true, force: true });
+  });
+  await app.locals.ready;
+  server = await new Promise((resolve, reject) => {
+    const instance = app.listen(0, '127.0.0.1', (error) => error ? reject(error) : resolve(instance));
+    instance.once('error', reject);
   });
   return { server, base: `http://127.0.0.1:${server.address().port}` };
 }
@@ -42,10 +50,19 @@ async function waitFor(base, id, statuses) {
   throw new Error(`Task ${id} did not reach ${statuses.join(', ')}`);
 }
 
+async function waitForProgress(base, id) {
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    const body = await (await fetch(`${base}/tasks/${id}`)).json();
+    if (body.status === 'running' && body.resultText && body.logTail) return body;
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  }
+  throw new Error(`Task ${id} did not expose live progress`);
+}
+
 test('successful calculation captures logs and result text', async (t) => {
   const setup = await fixture(`#!/bin/sh\necho stdout-line\necho stderr-line >&2\nwhile [ "$#" -gt 0 ]; do\n  if [ "$1" = "-logresult" ]; then shift; printf 'answer text' > "$1"; fi\n  shift\ndone\nexit 0\n`);
-  const { server, base } = await serve(setup);
-  t.after(() => server.close());
+  const { server, base } = await serve(t, setup);
   const created = await createTask(base);
   assert.equal(created.response.status, 202);
   const task = await waitFor(base, created.body.id, ['completed']);
@@ -58,8 +75,7 @@ test('successful calculation captures logs and result text', async (t) => {
 
 test('rejects a task when configured Walrus is missing', async (t) => {
   const setup = await fixture('#!/bin/sh\nexit 0\n');
-  const { server, base } = await serve(setup, { WALRUS_PATH: path.join(setup.root, 'missing') });
-  t.after(() => server.close());
+  const { server, base } = await serve(t, setup, { WALRUS_PATH: path.join(setup.root, 'missing') });
   const created = await createTask(base);
   assert.equal(created.response.status, 503);
   assert.match(created.body.error, /missing or not executable/);
@@ -67,8 +83,7 @@ test('rejects a task when configured Walrus is missing', async (t) => {
 
 test('reports spawn startup errors', async (t) => {
   const setup = await fixture('#!/definitely/missing/interpreter\n');
-  const { server, base } = await serve(setup);
-  t.after(() => server.close());
+  const { server, base } = await serve(t, setup);
   const created = await createTask(base);
   const task = await waitFor(base, created.body.id, ['failed']);
   assert.match(task.error, /ENOENT|spawn/);
@@ -76,8 +91,7 @@ test('reports spawn startup errors', async (t) => {
 
 test('reports a non-zero exit', async (t) => {
   const setup = await fixture('#!/bin/sh\necho bad >&2\nexit 7\n');
-  const { server, base } = await serve(setup);
-  t.after(() => server.close());
+  const { server, base } = await serve(t, setup);
   const created = await createTask(base);
   const task = await waitFor(base, created.body.id, ['failed']);
   assert.equal(task.exitCode, 7);
@@ -85,10 +99,21 @@ test('reports a non-zero exit', async (t) => {
   assert.match(task.logTail, /bad/);
 });
 
+test('returns partial result and logs while a calculation is running', async (t) => {
+  const setup = await fixture(`#!/bin/sh\nresult=''\nwhile [ "$#" -gt 0 ]; do\n  if [ "$1" = "-logresult" ]; then shift; result="$1"; fi\n  shift\ndone\nprintf 'partial Oscar result' > "$result"\necho 'Walrus progress 1/10'\nsleep 30\n`);
+  const { server, base } = await serve(t, setup);
+  const created = await createTask(base);
+  const progress = await waitForProgress(base, created.body.id);
+  assert.equal(progress.status, 'running');
+  assert.equal(progress.resultText, 'partial Oscar result');
+  assert.equal(progress.result, 'partial Oscar result');
+  assert.match(progress.logTail, /Walrus progress 1\/10/);
+  await fetch(`${base}/tasks/${created.body.id}`, { method: 'DELETE' });
+});
+
 test('cancels a running task and its child process', async (t) => {
   const setup = await fixture('#!/bin/sh\nsleep 30 &\nchild=$!\necho "$child"\nwait "$child"\n');
-  const { server, base } = await serve(setup);
-  t.after(() => server.close());
+  const { server, base } = await serve(t, setup);
   const created = await createTask(base);
   const running = await waitFor(base, created.body.id, ['running']);
   const childPid = Number(String(running.logTail || '').trim());

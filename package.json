@@ -4,9 +4,11 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "test:concurrency": "BODEALER_CONCURRENCY_TEST=1 node --test test/concurrency.test.js",
     "test": "node --test test/*.test.js",
     "dev": "nodemon server.js",
-    "start": "node server.js"
+    "start": "node server.js",
+    "test:docker": "BODEALER_DOCKER_TEST=1 node --test test/docker.integration.test.js"
   },
   "nodemonConfig": {
     "watch": [
