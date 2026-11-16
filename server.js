@@ -8,6 +8,7 @@ const { spawn, execFile } = require('child_process');
 const { promisify } = require('util');
 const { randomUUID } = require('crypto');
 const multer = require('multer');
+const { createTokenAuth } = require('./auth');
 
 const execFileAsync = promisify(execFile);
 const upload = multer({ limits: { fileSize: 5 * 1024 * 1024 } });
@@ -142,6 +143,7 @@ function createApp(options = {}) {
   const rootDir = options.rootDir || __dirname;
   const platform = options.platform || process.platform;
   const env = options.env || process.env;
+  const authenticate = createTokenAuth(env);
   const jobsDir = path.resolve(options.jobsDir || env.JOBS_DIR || path.join(rootDir, 'jobs'));
   const maxConcurrentTasks = Number(env.MAX_CONCURRENT_TASKS ?? 2);
   if (!Number.isSafeInteger(maxConcurrentTasks) || maxConcurrentTasks < 1) {
@@ -155,6 +157,9 @@ function createApp(options = {}) {
   let stopping = false;
   let shutdownPromise;
   const app = express();
+  // Authenticate before parsing bodies, reading task state, or accepting uploads.
+  // Protect future endpoints by default; GET /health is the sole public route.
+  app.use(authenticate);
   const ready = (async () => {
     await fsp.mkdir(jobsDir, { recursive: true });
     for (const id of await fsp.readdir(jobsDir)) {
@@ -194,7 +199,10 @@ function createApp(options = {}) {
     const resultPath = path.join(task.dir, RESULT_FILE);
     const args = ['-cfgname', configPath, '-logresult', resultPath, '-exitondone'];
     const logStream = fs.createWriteStream(path.join(task.dir, LOG_FILE), { flags: 'a' });
+    const solverEnv = { ...process.env };
+    delete solverEnv.BACKEND_API_TOKEN;
     const child = spawn(walrusPath, args, {
+      env: solverEnv,
       cwd: path.dirname(walrusPath),
       windowsHide: true,
       detached: platform !== 'win32',

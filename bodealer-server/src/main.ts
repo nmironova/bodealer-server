@@ -3,12 +3,17 @@ import { NestFactory } from '@nestjs/core';
 import { HttpAdapterHost } from '@nestjs/core';
 import { Logger } from '@nestjs/common';
 import { AppModule } from './app.module';
+// Share the same policy with the production supervisor, including legacy routes.
+const { createTokenAuth } = require('../../auth');
 
 async function bootstrap() {
+  const authenticate = createTokenAuth(process.env);
   const logger = new Logger();
   const app = await NestFactory.create(AppModule, {
     logger,
   });
+  app.use(authenticate);
+  app.getHttpAdapter().get('/health', (_req, res) => res.json({ status: 'ok' }));
 
   app.useGlobalPipes(
     new ValidationPipe({

@@ -4,6 +4,7 @@ services:
     ports:
       - "127.0.0.1:${PORT:-3001}:3001"
     environment:
+      BACKEND_API_TOKEN: ${BACKEND_API_TOKEN:?Set BACKEND_API_TOKEN in .env or the shell}
       PORT: "3001"
       JOBS_DIR: /app/jobs
       BODEALER_BIN_DIR: ${BODEALER_BIN_DIR:-/app/exes/linux}

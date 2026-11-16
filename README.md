@@ -60,6 +60,102 @@ Run focused tests with `npm test`.
 
 For development, `npm run dev` watches only the server source and package manifest. Job state, logs, and results under `jobs/` are deliberately excluded so creating a task cannot restart the supervisor while Walrus is running.
 
+## Service token authentication
+
+The Next.js BFF authenticates beta users and forwards backend requests with:
+
+```text
+Authorization: Bearer <BACKEND_API_TOKEN>
+```
+
+`BACKEND_API_TOKEN` is a private server-side environment variable. When configured,
+all endpoints require it except **GET /health**. This covers submission, listing,
+polling/progress/results, cancellation, and any future routes by default. The
+legacy Nest server in `bodealer-server/` uses the same middleware, including its
+`/tasks/hello` route. No separate result/download/management route exists in the
+production supervisor today; future additions inherit protection.
+
+Missing, malformed and incorrect credentials receive the same HTTP 401 JSON:
+`{"error":"Unauthorized"}`, with `WWW-Authenticate: Bearer`. Existing authorized
+responses are unchanged. Tokens are compared as equal-sized SHA-256 digests using
+[Node's timingSafeEqual](https://nodejs.org/docs/latest-v22.x/api/crypto.html#cryptotimingsafeequala-b).
+Authentication runs before body/upload parsing and task access. The token is not
+stored in task state, returned by the API, logged, or forwarded to Walrus/Oscar.
+Health responses expose only service status, task counts and the concurrency limit.
+
+Environment behavior:
+
+| Environment | Missing, empty or whitespace-only token | Configured token |
+| --- | --- | --- |
+| `NODE_ENV=production` | Startup fails before recovery or listening | Authentication required |
+| Development/test or unset `NODE_ENV` | Authentication disabled for local compatibility | Authentication required |
+
+A configured token must use Bearer-token characters (hex/base64url work); invalid
+characters fail startup without printing the value. Do not use the no-token
+local mode for a publicly reachable service. Tokens are read once at startup;
+restart/recreate the service when rotating them. There is no cookie or user
+account authentication in this backend.
+
+For local authenticated development, export `BACKEND_API_TOKEN` securely in the
+shell and run `npm start`. With Node.js 22, an existing private `.env` file can
+instead be loaded explicitly:
+
+```sh
+node --env-file=.env server.js
+```
+
+`npm start` does not automatically load `.env`; Docker Compose does. Ordinary
+`npm test` remains usable without a token. Auth tests and real solver tests use
+random, disposable test credentials and never require your deployment secret.
+
+For Docker/VPS deployment, create `.env` from `.env.example` and fill in a strong
+random token, or inject the variable from your host's secret configuration.
+Keep the same value only in the BFF's private server environment. `.env` files
+are ignored by Git and excluded from the Docker build context; `.env.example`
+contains no secret. Do not put the token in the Dockerfile or a build argument.
+Compose requires a nonempty variable, and the production server independently
+checks it.
+
+An alternative that creates a fresh private `.env` without printing the token
+or overwriting an existing file is:
+
+```sh
+node <<'NODE'
+const fs = require('node:fs');
+const { randomBytes } = require('node:crypto');
+fs.writeFileSync('.env', `BACKEND_API_TOKEN=${randomBytes(32).toString('hex')}\n`,
+  { mode: 0o600, flag: 'wx' });
+NODE
+
+docker compose up -d --build
+curl http://127.0.0.1:3001/health
+```
+
+When rotating the token in `.env`, recreate the container (`docker compose up -d
+--force-recreate`); `docker compose restart` does not apply new environment values.
+Keep HTTPS between Vercel and the VPS and keep the backend bound behind the
+reverse proxy. Configure request logging to exclude Authorization headers.
+
+### Required BFF changes
+
+The sibling `bodealer-ui/bodealer-ui` currently needs these **server-side** edits
+before it can call the protected backend:
+
+- `app/lib/actions.ts`: add the Bearer header to multipart calculation submission.
+- `app/api/tasks/[taskId]/route.ts`: replace `X-API-Key` on GET/DELETE with the
+  Bearer header for polling and cancellation.
+- `app/api/tasks/route.ts`: replace `X-API-Key` there too. This older POST route
+  also sends JSON; the production supervisor requires multipart `configFile`,
+  so align its payload or retire it if the server action is the active path.
+
+Use the private `BACKEND_API_TOKEN` environment variable on Vercel/Next.js, never
+`NEXT_PUBLIC_*`, client components, browser storage, URLs, or response payloads.
+A shared server-only fetch helper can validate that the variable is present and
+set `Authorization: Bearer ...` consistently. Do not forward the browser's
+Authorization header to this backend. All BFF routes **and server actions** must
+check the beta user's session before making backend calls. This backend change
+does not add those frontend user checks or modify the sibling UI repository.
+
 ## Queue, health, and recovery
 
 `MAX_CONCURRENT_TASKS` is a positive integer, default **2**. One Node instance
@@ -178,9 +274,9 @@ MAX_CONCURRENT_TASKS=2 PORT=3001 docker compose up -d
 
 `PORT` here selects the host port; the container API remains on 3001. Compose
 binds to **127.0.0.1**. A host HTTPS reverse proxy should expose it to the Vercel
-UI. The service does not add authentication or CORS policy in this change; keep
-the existing UI proxy arrangement or configure the reverse proxy for the actual
-UI origin. Public unrestricted solver access is not a deployment assumption.
+UI. The service requires the private BFF token and does not set a browser CORS
+policy. Keep requests server-to-server through authenticated Next.js routes and
+server actions. Public unrestricted solver access is not a deployment assumption.
 
 Inside Docker, `BODEALER_BIN_DIR` defaults to `/app/exes/linux`; `WALRUS_PATH`
 can override it. Paths passed to Compose must refer to locations **inside the
@@ -212,7 +308,7 @@ npm run test:concurrency
 npm run test:docker
 ```
 
-- `npm test`: controlled fake executable tests for HTTP behavior, FIFO capacity,
+- `npm test`: authentication and controlled fake executable tests for HTTP behavior, FIFO capacity,
   completion/failure promotion, queued/running cancellation, live progress,
   recovery, invalid startup state/configuration, and actual SIGTERM/SIGINT
   handling of a standalone Node server. These are **not real solver tests**.
@@ -249,9 +345,16 @@ persistence and graceful/forced restart recovery. Details are recorded in
    `npm run test:docker` on the deployment architecture.
 2. Choose CPU/RAM limits and concurrency for the host: each Walrus calculation
    can use native threads, so a limit of two tasks is not a limit of two CPUs.
-3. Configure DNS, TLS, reverse proxy routing and UI connectivity, with a decision
-   about who may submit work. No user accounts/authentication were added.
+3. Configure DNS, TLS, reverse proxy routing and UI connectivity. Configure the
+   private service token on both servers and require beta user sessions in the
+   BFF. Backend user accounts were not added.
 4. Set up volume backups, disk monitoring and an explicit result-retention
    policy. Task data and the in-memory queue are not bounded by a disk quota.
 5. Run exactly one server container for this volume. There is no distributed
    locking, durable queue replay, database or automatic calculation retry.
+
+Authentication validation on 2026-11-16: `npm test` passed 20 local tests (the two
+native integration tests are opt-in). `npm run test:docker` passed the full real
+Linux solver suite with authentication enabled, including live polling,
+cancellation and restart recovery (365.794 seconds). The legacy Nest build and
+live route-authentication smoke check also passed. No frontend code was modified.

@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
-const { createHash } = require('node:crypto');
+const { createHash, randomBytes } = require('node:crypto');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { createApp, resolveWalrusPath, validateWalrus } = require('../server');
@@ -54,7 +54,8 @@ test('real Walrus/Oscar calculations run concurrently with independent files', {
   }
   const before = await snapshot(runtime);
   const config = await fs.readFile(path.join(__dirname, 'fixtures/concurrent-start.txt'));
-  const app = createApp({ jobsDir, env: { WALRUS_PATH: path.join(runtime, path.basename(source)) } });
+  const token = randomBytes(32).toString('hex');
+  const app = createApp({ jobsDir, env: { NODE_ENV: 'production', BACKEND_API_TOKEN: token, WALRUS_PATH: path.join(runtime, path.basename(source)) } });
   const server = await new Promise((resolve, reject) => {
     const instance = app.listen(0, '127.0.0.1', (error) => error ? reject(error) : resolve(instance));
     instance.once('error', reject);
@@ -63,7 +64,9 @@ test('real Walrus/Oscar calculations run concurrently with independent files', {
   const report = { root, artifactsRetained: keepArtifacts, source, configSha256: hash(config), tasks: [], processSamples: [], failures: [] };
   const check = (condition, message) => { if (!condition) report.failures.push(message); };
   async function request(url, options = {}) {
-    const response = await fetch(base + url, { ...options, signal: AbortSignal.timeout(10000) });
+    const headers = new Headers(options.headers);
+    headers.set('Authorization', `Bearer ${token}`);
+    const response = await fetch(base + url, { ...options, headers, signal: AbortSignal.timeout(10000) });
     const body = await response.json();
     assert.ok(response.ok, `${response.status}: ${JSON.stringify(body)}`);
     return { response, body };

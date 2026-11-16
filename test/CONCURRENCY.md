@@ -131,3 +131,15 @@ The first lifecycle attempt exposed an overly strict test expectation of exactly
 20,016 boards; a valid native worker run produced 20,004 with consistent totals.
 The test now requires at least the configured 20,000 boards and verifies that
 make/down counts sum to the processed total, matching the existing pair test.
+
+## Service-token regression, 2026-11-16
+
+The real Linux Docker suite passed with production authentication enabled and
+random disposable tokens: **365.794 seconds** overall. The initial real pair
+check passed with **111.603 seconds** of overlap; the three-task API phase
+observed **146.584 seconds** of overlap between the first two calculations.
+Authorized submission, live polling, queue promotion, queued/running cancellation,
+file persistence and graceful/forced restart recovery all passed. A missing-token
+submission was rejected with 401 before any task was created. Credentials were
+passed via the child environment to Docker, never in command-line arguments or
+reports; the server removes the service token from the solver environment.

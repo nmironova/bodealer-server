@@ -8,7 +8,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
-const { randomUUID, createHash } = require('node:crypto');
+const { randomUUID, randomBytes, createHash } = require('node:crypto');
 const exec = promisify(execFile);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const sha = (value) => createHash('sha256').update(value).digest('hex');
@@ -16,6 +16,7 @@ const sha = (value) => createHash('sha256').update(value).digest('hex');
 test('Linux Docker: real concurrency, queue, progress, cancellation, volume and restart recovery', {
   skip: process.env.BODEALER_DOCKER_TEST !== '1', timeout: 1200000,
 }, async () => {
+  const token = randomBytes(32).toString('hex');
   const suffix = randomUUID();
   const name = `bodealer-test-${suffix}`;
   const volume = `${name}-jobs`;
@@ -23,13 +24,16 @@ test('Linux Docker: real concurrency, queue, progress, cancellation, volume and 
   const config = await fs.readFile(path.join(__dirname, 'fixtures/concurrent-start.txt'));
   const report = { tasks: [], checks: [] };
   const docker = async (...args) => (await exec('docker', args, {
+    env: { ...process.env, BACKEND_API_TOKEN: token },
     cwd: path.join(__dirname, '..'), timeout: 600000, maxBuffer: 8 * 1024 * 1024,
   })).stdout.trim();
   let base;
   let createdVolume = false;
   let createdContainer = false;
   async function api(route, options = {}) {
-    const response = await fetch(base + route, { ...options, signal: AbortSignal.timeout(10000) });
+    const headers = new Headers(options.headers);
+    if (route !== '/health') headers.set('Authorization', `Bearer ${token}`);
+    const response = await fetch(base + route, { ...options, headers, signal: AbortSignal.timeout(10000) });
     const body = await response.json();
     assert.ok(response.ok, `${route}: ${JSON.stringify(body)}`);
     return body;
@@ -87,9 +91,13 @@ test('Linux Docker: real concurrency, queue, progress, cancellation, volume and 
     await docker('volume', 'create', volume);
     createdVolume = true;
     await docker('run', '-d', '--name', name, '-p', '127.0.0.1::3001',
-      '-e', 'MAX_CONCURRENT_TASKS=2', '-v', `${volume}:/app/jobs`, image);
+      '-e', 'BACKEND_API_TOKEN', '-e', 'MAX_CONCURRENT_TASKS=2', '-v', `${volume}:/app/jobs`, image);
     createdContainer = true;
     await healthy();
+    const denied = await fetch(base + '/tasks', { method: 'POST', signal: AbortSignal.timeout(10000) });
+    assert.equal(denied.status, 401);
+    assert.equal((await api('/health')).runningTasks, 0);
+    assert.deepEqual(await api('/tasks'), []);
     const [a, b] = await Promise.all([submit(), submit()]);
     const c = await submit();
     const d = await submit();
@@ -168,7 +176,7 @@ test('Linux Docker: real concurrency, queue, progress, cancellation, volume and 
     await docker('rm', name);
     createdContainer = false;
     await docker('run', '-d', '--name', name, '-p', '127.0.0.1::3001',
-      '-e', 'MAX_CONCURRENT_TASKS=2', '-v', `${volume}:/app/jobs`, image);
+      '-e', 'BACKEND_API_TOKEN', '-e', 'MAX_CONCURRENT_TASKS=2', '-v', `${volume}:/app/jobs`, image);
     createdContainer = true;
     await healthy();
     for (const task of [...inFlight, queued]) {

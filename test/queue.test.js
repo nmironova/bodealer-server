@@ -42,7 +42,7 @@ const timer = setInterval(() => {
   process.exitCode = fs.existsSync(path.join(dir, 'fail')) ? 7 : 0;
 }, 20);
 `, { mode: 0o755 });
-  const env = { WALRUS_PATH: walrus, JOBS_DIR: jobsDir, MAX_CONCURRENT_TASKS: limit };
+  const env = { NODE_ENV: 'test', BACKEND_API_TOKEN: '', WALRUS_PATH: walrus, JOBS_DIR: jobsDir, MAX_CONCURRENT_TASKS: limit };
   const apps = [];
   const servers = [];
   async function serve() {

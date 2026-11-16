@@ -12,7 +12,7 @@ RUN npm ci --omit=dev && npm cache clean --force
 COPY exes/linux/ /app/exes/linux/
 COPY scripts/check-linux-runtime.sh /app/scripts/check-linux-runtime.sh
 RUN sh /app/scripts/check-linux-runtime.sh /app/exes/linux
-COPY server.js ./
+COPY server.js auth.js ./
 COPY test/ ./test/
 RUN mkdir -p /app/jobs && chown -R node:node /app
 ENV NODE_ENV=production PORT=3001 JOBS_DIR=/app/jobs \
